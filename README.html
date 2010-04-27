@@ -1,0 +1,33 @@
+<html>
+<head>
+<title>go-zipfile</title>
+</head>
+<body>
+
+<h1><center>Project go-zipfile.</center></h1>
+
+
+<h3>2010-04-27 Started project to convert public domain zipfile.py into go.  <h3>
+<pre>
+	git master branch only at this point
+
+	I'm going to use package 'main' while testing stuff, then move the working parts to package 'zipfile'
+
+	The makefile will be generalized a bit later.  
+	For now, using a very simple one which works on my system (AMD64).
+
+	This conversion is based on the code from Python-2.6.5.tar.bz2 from www.python.org.  Specifically,
+	Python-2.6.5/Lib/zipfile.py.
+
+	The "zip" specification document can be found at http://www.pkware.com/documents/casestudies/APPNOTE.TXT
+	(URL valid as of April 2010)
+
+	Goal for end result is to work like the package 'zlib' interface.
+
+</pre>
+<h3>Steps along the way...</h3>
+<ol>
+<li> open the named zip file and validate that it is in fact a zip-encoded file
+</ol>
+
+</body>
