@@ -1,0 +1,9 @@
+Project go-zipfile.  
+
+2010-04-27 Started project to convert public domain zipfile.py into go.  
+	master branch only at this point
+
+	We're going to use package 'main' while testing stuff, then move the working parts to package 'zipfile'
+
+	The makefile will be generalized a bit later.  
+	For now, using a very simple one which works on my system (AMD64).
