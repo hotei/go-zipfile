@@ -20,8 +20,8 @@ const DEBUG = true
 const (
 	structEndArchive = "<4s4H2LH"
 	stringEndArchive = "PK\005\006"
-//	sizeEndCentDir = struct.calcsize(structEndArchive)
-	sizeEndCentDir = 22	// so says python 2.6.2 interp
+	//	sizeEndCentDir = struct.calcsize(structEndArchive)
+	sizeEndCentDir = 22 // so says python 2.6.2 interp
 )
 
 /*
@@ -43,53 +43,69 @@ const (
         .ZIP file comment       (variable size)
 */
 type CentDirRec struct {
-	CentDirSig 			[4]byte
-	ThisDiskNumber 		int16
-	CentDirDiskNumber	int16
-	ThisDiskDirEnts		int16
-	CentDirDirEnts		int16
-	CentDirTotalSize	int32
-	CentDirOffset		int32
-	CommentLength		int16
-	Comment				[]byte
+	CentDirSig        [4]byte
+	ThisDiskNumber    int16
+	CentDirDiskNumber int16
+	ThisDiskDirEnts   int16
+	CentDirDirEnts    int16
+	CentDirTotalSize  int32
+	CentDirOffset     int32
+	CommentLength     int16
+	Comment           []byte
 }
 
 
 // Quickly see if file is a ZIP file by checking the magic number
 func is_zipfile(filename string) bool {
-	if DEBUG { fmt.Printf("Testing is_zipfile( %s )\n",filename) }
+	if DEBUG {
+		fmt.Printf("Testing is_zipfile( %s )\n", filename)
+	}
 	fpin, err := os.Open(filename, os.O_RDONLY, 0666)
-// err could be file not found, file found but not accessible etc
-// in any case test fails
-	if err != nil {	return false }
+	// err could be file not found, file found but not accessible etc
+	// in any case test fails
+	if err != nil {
+		return false
+	}
 	defer fpin.Close()
 	endrec, err := _EndRecData(fpin) // returns a ZipDir record
-	if err != nil {	return false }
-	if endrec != nil { return true } // file readable and has correct magic number
-    return false
+	if err != nil {
+		return false
+	}
+	if endrec != nil {
+		return true
+	} // file readable and has correct magic number
+	return false
 }
 
 func _EndRecData(fpin *os.File) (*CentDirRec, os.Error) {
-/* 
-	Return data from the "End of Central Directory" record, or nil.
+	/*
+		Return data from the "End of Central Directory" record, or nil.
 
-    The data is a list of the nine items in the ZIP "End of central dir"
-    record followed by a tenth item, the file seek offset of this record.
-*/
-	filesize, err := fpin.Seek(0,2)
-	if DEBUG { fmt.Printf("filesize = %d\n",filesize) }
+	    The data is a list of the nine items in the ZIP "End of central dir"
+	    record followed by a tenth item, the file seek offset of this record.
+	*/
+	filesize, err := fpin.Seek(0, 2)
+	if DEBUG {
+		fmt.Printf("filesize = %d\n", filesize)
+	}
 
 	_, err = fpin.Seek(-sizeEndCentDir, 2)
-	if err != nil { return nil, err }
+	if err != nil {
+		return nil, err
+	}
 	var n int
-    var data [sizeEndCentDir]byte    
-    n, err = fpin.Read(&data)
-	fmt.Printf("data = %v\n",data)
-	if n != sizeEndCentDir { return nil, os.EINVAL }
+	var data [sizeEndCentDir]byte
+	n, err = fpin.Read(&data)
+	fmt.Printf("data = %v\n", data)
+	if n != sizeEndCentDir {
+		return nil, os.EINVAL
+	}
 	cdr := new(CentDirRec)
 
 	if (string(data[0:4]) == stringEndArchive) && (string(data[sizeEndCentDir-2:]) == "\000\000") {
-		if DEBUG { fmt.Printf("looks like a good zipfile\n") }
+		if DEBUG {
+			fmt.Printf("looks like a good zipfile\n")
+		}
 		cdr = cdr
 	} else {
 		fmt.Printf("bad magic or EndCentDir in zipfile\n")
@@ -103,9 +119,9 @@ func main() {
 	flag.Parse()
 	fmt.Printf("Flag got %d args on cmd line after command name\n", flag.NArg())
 	if flag.NArg() == 0 { // do nothing
-	} else {	// whitespace sensitive
+	} else { // whitespace sensitive
 		for i := 0; i < flag.NArg(); i++ {
-			fmt.Printf("%d %s\n",i, flag.Arg(i))
+			fmt.Printf("%d %s\n", i, flag.Arg(i))
 			is_zipfile(flag.Arg(i))
 		}
 	}
@@ -168,4 +184,3 @@ def _EndRecData(fpin):
     # Unable to find a valid end of central directory structure
     return
 */
-
