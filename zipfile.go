@@ -106,7 +106,7 @@ func _EndRecData(fpin *os.File) (*CentDirRec, os.Error) {
 		if DEBUG {
 			fmt.Printf("looks like a good zipfile\n")
 		}
-		cdr = cdr
+		cdr = cdr       // [TODO]need struct.unpack() here
 	} else {
 		fmt.Printf("bad magic or EndCentDir in zipfile\n")
 		fmt.Printf("magic = %v, end = %v\n", data[0:4], data[sizeEndCentDir-2:])
