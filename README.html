@@ -7,25 +7,33 @@
 <h1><center>Project go-zipfile.</center></h1>
 
 
-<h3>2010-04-27 Started project to convert public domain zipfile.py into go.  <h3>
+<h3>2010-04-27 Started project to convert public domain zipfile.py into go.  <h3><br><br>
+<h3>Notes</h3>
+Sending only git master branch to github at this point<p>
+
+I'm going to use package 'main' while testing stuff, then move the working parts to package 'zipfile'<p>
+
+The makefile will be generalized a bit later.  <p>
+For now, using a very simple one which works on my system (AMD64).<p>
+
+This project was inspired initially by the code from Python-2.6.5.tar.bz2 from www.python.org.  Specifically,
+Python-2.6.5/Lib/zipfile.py. However, after converting a few hundred lines or so it became apparent that a
+"rethink" of the project was in order.  The thought is 1) make it simple.  2) make it work  3) rinse and repeat.  
+This seemed easier if I just started from scratch.  I know python fairly well and go not very much, so this
+is a learning experience for me.  I don't profess the go code to be anywhere near optimal at this point, but
+it should at least work if it made it to github. I've got lots of sections still marked "TODO" for error
+handling, so please be wary if you intend to base a project of your own on this code.  While not required,
+I'd like to know if you choose to do so.  Also, if find problems with the code I'd like to know about them.
+<p>
+
+The "zip" specification document can be found at http://www.pkware.com/documents/casestudies/APPNOTE.TXT
+(URL valid as of April 2010)<p>
+
+Goal for end result (originally) was to work like the package 'zlib' interface.  
+Now goal is evolving sideways a bit... <p>
+
+The implementation provides filters that uncompress during reading and compress during writing. For example, to write compressed data to a buffer:<p>
 <pre>
-	git master branch only at this point
-
-	I'm going to use package 'main' while testing stuff, then move the working parts to package 'zipfile'
-
-	The makefile will be generalized a bit later.  
-	For now, using a very simple one which works on my system (AMD64).
-
-	This conversion is based on the code from Python-2.6.5.tar.bz2 from www.python.org.  Specifically,
-	Python-2.6.5/Lib/zipfile.py.
-
-	The "zip" specification document can be found at http://www.pkware.com/documents/casestudies/APPNOTE.TXT
-	(URL valid as of April 2010)
-
-	Goal for end result is to work like the package 'zlib' interface.
-
-The implementation provides filters that uncompress during reading and compress during writing. For example, to write compressed data to a buffer:
-
 var b bytes.Buffer
 w, err := ziplib.NewDeflater(&b)
 w.Write([]byte("hello, world\n"))
@@ -36,12 +44,13 @@ and to read that data back:
 r, err := ziplib.NewInflater(&b)
 io.Copy(os.Stdout, r)
 r.Close()
-
 </pre>
+
 <h3>Steps along the way...</h3>
 <ol>
-<li> (done)open the named zip file and validate that it is in fact a zip-encoded file
-<li> python's struct module is imported and used 22 times  may need to look at implementing that in go?
+<li> (done) open the named zip file and validate that it is in fact a zip-encoded file
+<li> (done) open a named zip file and return a list of all the files included in it ie. mylist := ListOfFiles("filename.zip")
+<li> Next: extract (by name) an uncompressed file into a data[]byte object ie.  mydata, err := GetFile("src/Makefile")
 </ol>
 
 </body>
