@@ -1,6 +1,6 @@
 // zipfile.go
 
-// Copyright 2009-2010 The Go Authors. All rights reserved.
+// Copyright 2009-2010 David Rook. All rights reserved.
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
@@ -11,54 +11,67 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	//    "unsafe"
 )
 
 const DEBUG = true
-
-// The "end of central directory" structure, magic number, size, and indices
-// (section V.I in the format document)
 const (
-	structEndArchive = "<4s4H2LH"
-	stringEndArchive = "PK\005\006"
-	//	sizeEndCentDir = struct.calcsize(structEndArchive)
-	sizeEndCentDir = 22 // so says python 2.6.2 interp
+	ZIP_LocalHdrSig  = "PK\003\004"
+	ZIP_CentDirSig = "PK\001\002"
+	ZIP_STORED   = 0
+	ZIP_DEFLATED = 8
 )
 
-/*
-  I.  End of central directory record:
-
-        end of central dir signature    4 bytes  (0x06054b50)
-        number of this disk             2 bytes
-        number of the disk with the
-        start of the central directory  2 bytes
-        total number of entries in the
-        central directory on this disk  2 bytes
-        total number of entries in
-        the central directory           2 bytes
-        size of the central directory   4 bytes
-        offset of start of central
-        directory with respect to
-        the starting disk number        4 bytes
-        .ZIP file comment length        2 bytes
-        .ZIP file comment       (variable size)
-*/
-type CentDirRec struct {
-	CentDirSig        [4]byte
-	ThisDiskNumber    int16
-	CentDirDiskNumber int16
-	ThisDiskDirEnts   int16
-	CentDirDirEnts    int16
-	CentDirTotalSize  int32
-	CentDirOffset     int32
-	CommentLength     int16
-	Comment           []byte
+type ZipLocalHeader struct {
+	zlhsig       string // (0x04034b50)  or "PK\003\004"
+	ver2Extract  uint16 // need this version or higher to extract
+	generalBits  uint16
+	compressMeth uint16
+	lastModTime  uint16
+	lastModDate  uint16
+	crc32        uint32
+	compressSize uint32
+	unComprSize  uint32
+	fileNameLen  uint16
+	extraFldLen  uint16
+	fileName     []byte
+	extraFld     []byte
 }
 
+// convert from litte endian two byte slice to int16
+func SixteenBit(n []byte) uint16 {
+	if len(n) != 2 { /* TODO problem */
+	}
+	var rc uint16
+	rc = uint16(n[1])
+	rc <<= 8
+	rc |= uint16(n[0])
+	return rc
+}
 
-// Quickly see if file is a ZIP file by checking the magic number
-func is_zipfile(filename string) bool {
+// convert from litte endian four byte slice to int32
+func ThirtyTwoBit(n []byte) uint32 {
+	if len(n) != 4 { /* TODO problem */
+	}
+	var rc uint32
+	rc = uint32(n[3])
+	rc <<= 8
+	rc |= uint32(n[2])
+	rc <<= 8
+	rc |= uint32(n[1])
+	rc <<= 8
+	rc |= uint32(n[0])
+	return rc
+}
+
+// test function to read thru file headers
+func readHeaders(filename string) bool {
+	var n int
+	var curPos int64
+	var newPos int64
+
 	if DEBUG {
-		fmt.Printf("Testing is_zipfile( %s )\n", filename)
+		fmt.Printf("Testing readHeader( %s )\n", filename)
 	}
 	fpin, err := os.Open(filename, os.O_RDONLY, 0666)
 	// err could be file not found, file found but not accessible etc
@@ -67,54 +80,176 @@ func is_zipfile(filename string) bool {
 		return false
 	}
 	defer fpin.Close()
-	endrec, err := _EndRecData(fpin) // returns a ZipDir record
-	if err != nil {
-		return false
+	fileSize, err := fpin.Seek(0, 2) // get file size
+	if DEBUG { fmt.Printf("file size = %d\n", fileSize) }
+	if err != nil { return false }
+	_, err = fpin.Seek(0, 0) // back to beginning
+
+	hdr := new(ZipLocalHeader)
+	//    fmt.Printf("size of hdr = %d\n", unsafe.Sizeof(*hdr))
+	var hdrData [30]byte // size of header data fixed fields only
+
+	for {
+		n, err = fpin.Read(&hdrData)
+		if err != nil || n != 30 { /* TODO problem */
+			fmt.Printf("Header read failed\n")
+			os.Exit(1)
+		}
+		//	    fmt.Printf("data = %v\n", hdrData)
+
+		if string(hdrData[0:4]) == ZIP_LocalHdrSig {
+			//            if DEBUG { fmt.Printf("good magic number\n") }
+			hdr.zlhsig = ZIP_LocalHdrSig
+		}
+		hdr.ver2Extract = SixteenBit(hdrData[4:6])
+		//        fmt.Printf("Extract version req = %d\n", hdr.ver2Extract )
+
+		hdr.generalBits = SixteenBit(hdrData[6:8])
+		//        fmt.Printf("General bits = %d\n", hdr.generalBits )
+
+		hdr.compressMeth = SixteenBit(hdrData[8:10])
+		fmt.Printf("Compress Method = %d\n", hdr.compressMeth)
+		if hdr.compressMeth != ZIP_STORED && hdr.compressMeth != ZIP_DEFLATED {
+			fmt.Printf("Trouble -- unimplemented compression meth %d\n", hdr.compressMeth)
+			os.Exit(1)
+		}
+		hdr.lastModTime = SixteenBit(hdrData[10:12])
+		//        fmt.Printf("LastModTime = %d\n", hdr.lastModTime )
+
+		hdr.lastModDate = SixteenBit(hdrData[12:14])
+		//        fmt.Printf("LastModDate = %d\n", hdr.lastModDate )
+
+		hdr.crc32 = ThirtyTwoBit(hdrData[14:18])
+		//        fmt.Printf("crc32 = %4x\n", hdr.crc32)
+
+		hdr.compressSize = ThirtyTwoBit(hdrData[18:22])
+		//        fmt.Printf("compressSize = %d\n", hdr.compressSize)
+
+		hdr.unComprSize = ThirtyTwoBit(hdrData[22:26])
+		//        fmt.Printf("unComprSize = %d\n", hdr.unComprSize)
+
+		hdr.fileNameLen = SixteenBit(hdrData[26:28])
+		fmt.Printf("fileNameLen = %d\n", hdr.fileNameLen)
+
+		if hdr.fileNameLen == 0 {
+			fmt.Printf("Reached end of zip file\n")
+			break
+		}
+
+		hdr.extraFldLen = SixteenBit(hdrData[28:30])
+		//        fmt.Printf("extraFldLen = %d\n", hdr.extraFldLen)
+
+		fname := make([]byte, hdr.fileNameLen, hdr.fileNameLen)
+		n, err = fpin.Read(fname)
+		if err != nil || n != int(hdr.fileNameLen) { /* TODO problem */
+		}
+		fmt.Printf("filename = %s\n", fname)
+
+		extra := make([]byte, hdr.extraFldLen, hdr.extraFldLen)
+		n, err = fpin.Read(extra)
+		if err != nil || n != int(hdr.extraFldLen) { /* TODO problem */
+		}
+		//        fmt.Printf("extra = %v\n", extra)
+		curPos, err = fpin.Seek(0, 1)
+		//        fmt.Printf("current position is %d\n", curPos )
+		newPos, err = fpin.Seek(int64(hdr.compressSize), 1) // advance to next header
+		if newPos != int64(hdr.compressSize)+curPos {
+			fmt.Printf("advance to next header failed %d != %d\n", newPos, int64(hdr.compressSize)+curPos)
+			os.Exit(1)
+		}
+		if newPos >= fileSize {
+			fmt.Printf("Reached end of zip file\n")
+			break
+		}
 	}
-	if endrec != nil {
-		return true
-	} // file readable and has correct magic number
-	return false
+	return true // ok
 }
 
-func _EndRecData(fpin *os.File) (*CentDirRec, os.Error) {
-	/*
-		Return data from the "End of Central Directory" record, or nil.
+// return nil, false if Zip is bad or empty
+// TODO ? handle error better how ?
+func ListOfFiles(filename string) ([]string, bool) {
+	var curPos, newPos int64
+	var chRead int
+	
+	if DEBUG { fmt.Printf("Testing ListOfFiles( %s )\n", filename) }
+	fpin, err := os.Open(filename, os.O_RDONLY, 0666)
+	// err could be file not found, file found but not accessible etc
+	// in any case test fails
+	if err != nil { return nil, false }
+	defer fpin.Close()
+	fileSize, err := fpin.Seek(0, 2) // get file size
+	if DEBUG { fmt.Printf("file size = %d\n", fileSize) }
+	if err != nil { return nil, false }
+	_, err = fpin.Seek(0, 0) // back to beginning
+	
+	hdr := new(ZipLocalHeader)
+	//    fmt.Printf("size of hdr = %d\n", unsafe.Sizeof(*hdr))
+	var hdrData [30]byte // size of header data fixed fields only
 
-	    The data is a list of the nine items in the ZIP "End of central dir"
-	    record followed by a tenth item, the file seek offset of this record.
-	*/
-	filesize, err := fpin.Seek(0, 2)
-	if DEBUG {
-		fmt.Printf("filesize = %d\n", filesize)
-	}
-
-	_, err = fpin.Seek(-sizeEndCentDir, 2)
-	if err != nil {
-		return nil, err
-	}
-	var n int
-	var data [sizeEndCentDir]byte
-	n, err = fpin.Read(&data)
-	fmt.Printf("data = %v\n", data)
-	if n != sizeEndCentDir {
-		return nil, os.EINVAL
-	}
-	cdr := new(CentDirRec)
-
-	if (string(data[0:4]) == stringEndArchive) && (string(data[sizeEndCentDir-2:]) == "\000\000") {
-		if DEBUG {
-			fmt.Printf("looks like a good zipfile\n")
+	fileList := make([]string, 0, 100)
+	fnum := 0
+	for {
+		chRead, err = fpin.Read(&hdrData)
+		if err != nil || chRead != 30 { /* TODO problem */
+			fmt.Printf("Header read failed\n")
+			return nil, false
 		}
-		cdr = cdr       // [TODO]need struct.unpack() here
-	} else {
-		fmt.Printf("bad magic or EndCentDir in zipfile\n")
-		fmt.Printf("magic = %v, end = %v\n", data[0:4], data[sizeEndCentDir-2:])
+
+		if string(hdrData[0:4]) != ZIP_LocalHdrSig {
+			if string(hdrData[0:4]) == ZIP_CentDirSig {
+				break
+			}
+			fmt.Printf("bad magic number in local headers\n")
+			fmt.Printf("got %v\n", hdrData[0:4])
+			return nil, false
+		}
+
+		hdr.fileNameLen = SixteenBit(hdrData[26:28])
+
+		if hdr.fileNameLen == 0 {
+			// fmt.Printf("Reached end of zip file\n")
+			break
+		}
+		
+		fname := make([]byte, hdr.fileNameLen, hdr.fileNameLen)
+		chRead, err = fpin.Read(fname)
+		if err != nil || chRead != int(hdr.fileNameLen) { /* TODO problem */ }
+		fnum++
+		fmt.Printf("File[%d]: %s\n",fnum, fname)
+		
+		l := len(fileList)
+		c := cap(fileList)
+		if l < c {	// new item will fit
+			fileList = fileList[0:l+1]
+			fileList[ l ] = string(fname)
+		} else { // allocate more space
+			newList := make([]string, l, c*2)
+			n := copy(newList, fileList)
+			if n != len(fileList) { fmt.Printf("fatal copy error 1\n"); os.Exit(1) }
+			fileList = newList
+			l = len(fileList)
+			c = cap(fileList)
+			fileList = fileList[0:l+1]
+			fileList[ l ] = string(fname)			
+		}
+		// skip the extra data fields
+		hdr.extraFldLen = SixteenBit(hdrData[28:30])
+		curPos, err = fpin.Seek(int64(hdr.extraFldLen), 1)
+		curPos = curPos	// TODO
+		hdr.compressSize = ThirtyTwoBit(hdrData[18:22])
+		newPos, err = fpin.Seek(int64(hdr.compressSize), 1)		// seek past zip'd data
+		if err != nil { /* TODO */ }
+		if newPos >= fileSize {
+			// fmt.Printf("Reached end of zip file\n")
+			break
+		}
 	}
-	return cdr, nil
+		
+	return fileList, true	// success
 }
 
 func main() {
+	var ok bool = true
 	fmt.Printf("hello\n")
 	flag.Parse()
 	fmt.Printf("Flag got %d args on cmd line after command name\n", flag.NArg())
@@ -122,65 +257,19 @@ func main() {
 	} else { // whitespace sensitive
 		for i := 0; i < flag.NArg(); i++ {
 			fmt.Printf("%d %s\n", i, flag.Arg(i))
-			is_zipfile(flag.Arg(i))
+			//ok = readHeaders(flag.Arg(i))
+			//if ok == false { /* tell somebody */ }
+
+			var files []string
+			files, ok = ListOfFiles(flag.Arg(i))
+			if !ok { fmt.Printf("ListOfFiles failed\n") }
+			if files == nil || ! ok { /* TODO problem */ 
+			} else {
+				for ndx, val := range files {
+					fmt.Printf("file[%d] = %s\n", ndx+1, val)
+				}
+			}			
 		}
 	}
+	os.Exit(0)
 }
-/*
-def _EndRecData(fpin):
-    """Return data from the "End of Central Directory" record, or None.
-
-    The data is a list of the nine items in the ZIP "End of central dir"
-    record followed by a tenth item, the file seek offset of this record."""
-
-    # Determine file size
-    fpin.seek(0, 2)
-    filesize = fpin.tell()
-
-    # Check to see if this is ZIP file with no archive comment (the
-    # "end of central directory" structure should be the last item in the
-    # file if this is the case).
-    try:
-        fpin.seek(-sizeEndCentDir, 2)
-    except IOError:
-        return None
-    data = fpin.read()		 // read to end of file
-    if data[0:4] == stringEndArchive and data[-2:] == "\000\000":
-        # the signature is correct and there's no comment, unpack structure
-        endrec = struct.unpack(structEndArchive, data)
-        endrec=list(endrec)
-
-        # Append a blank comment and record start offset
-        endrec.append("")
-        endrec.append(filesize - sizeEndCentDir)
-
-        # Try to read the "Zip64 end of central directory" structure
-        return _EndRecData64(fpin, -sizeEndCentDir, endrec)
-
-    # Either this is not a ZIP file, or it is a ZIP file with an archive
-    # comment.  Search the end of the file for the "end of central directory"
-    # record signature. The comment is the last item in the ZIP file and may be
-    # up to 64K long.  It is assumed that the "end of central directory" magic
-    # number does not appear in the comment.
-    maxCommentStart = max(filesize - (1 << 16) - sizeEndCentDir, 0)
-    fpin.seek(maxCommentStart, 0)
-    data = fpin.read()
-    start = data.rfind(stringEndArchive)
-    if start >= 0:
-        # found the magic number; attempt to unpack and interpret
-        recData = data[start:start+sizeEndCentDir]
-        endrec = list(struct.unpack(structEndArchive, recData))
-        comment = data[start+sizeEndCentDir:]
-        # check that comment length is correct
-        if endrec[_ECD_COMMENT_SIZE] == len(comment):
-            # Append the archive comment and start offset
-            endrec.append(comment)
-            endrec.append(maxCommentStart + start)
-
-            # Try to read the "Zip64 end of central directory" structure
-            return _EndRecData64(fpin, maxCommentStart + start - filesize,
-                                 endrec)
-
-    # Unable to find a valid end of central directory structure
-    return
-*/
