@@ -16,10 +16,10 @@ import (
 
 const DEBUG = true
 const (
-	ZIP_LocalHdrSig  = "PK\003\004"
-	ZIP_CentDirSig = "PK\001\002"
-	ZIP_STORED   = 0
-	ZIP_DEFLATED = 8
+	ZIP_LocalHdrSig = "PK\003\004"
+	ZIP_CentDirSig  = "PK\001\002"
+	ZIP_STORED      = 0
+	ZIP_DEFLATED    = 8
 )
 
 type ZipLocalHeader struct {
@@ -81,8 +81,12 @@ func readHeaders(filename string) bool {
 	}
 	defer fpin.Close()
 	fileSize, err := fpin.Seek(0, 2) // get file size
-	if DEBUG { fmt.Printf("file size = %d\n", fileSize) }
-	if err != nil { return false }
+	if DEBUG {
+		fmt.Printf("file size = %d\n", fileSize)
+	}
+	if err != nil {
+		return false
+	}
 	_, err = fpin.Seek(0, 0) // back to beginning
 
 	hdr := new(ZipLocalHeader)
@@ -170,18 +174,26 @@ func readHeaders(filename string) bool {
 func ListOfFiles(filename string) ([]string, bool) {
 	var curPos, newPos int64
 	var chRead int
-	
-	if DEBUG { fmt.Printf("Testing ListOfFiles( %s )\n", filename) }
+
+	if DEBUG {
+		fmt.Printf("Testing ListOfFiles( %s )\n", filename)
+	}
 	fpin, err := os.Open(filename, os.O_RDONLY, 0666)
 	// err could be file not found, file found but not accessible etc
 	// in any case test fails
-	if err != nil { return nil, false }
+	if err != nil {
+		return nil, false
+	}
 	defer fpin.Close()
 	fileSize, err := fpin.Seek(0, 2) // get file size
-	if DEBUG { fmt.Printf("file size = %d\n", fileSize) }
-	if err != nil { return nil, false }
+	if DEBUG {
+		fmt.Printf("file size = %d\n", fileSize)
+	}
+	if err != nil {
+		return nil, false
+	}
 	_, err = fpin.Seek(0, 0) // back to beginning
-	
+
 	hdr := new(ZipLocalHeader)
 	//    fmt.Printf("size of hdr = %d\n", unsafe.Sizeof(*hdr))
 	var hdrData [30]byte // size of header data fixed fields only
@@ -210,42 +222,47 @@ func ListOfFiles(filename string) ([]string, bool) {
 			// fmt.Printf("Reached end of zip file\n")
 			break
 		}
-		
+
 		fname := make([]byte, hdr.fileNameLen, hdr.fileNameLen)
 		chRead, err = fpin.Read(fname)
-		if err != nil || chRead != int(hdr.fileNameLen) { /* TODO problem */ }
+		if err != nil || chRead != int(hdr.fileNameLen) { /* TODO problem */
+		}
 		fnum++
-		fmt.Printf("File[%d]: %s\n",fnum, fname)
-		
+		fmt.Printf("File[%d]: %s\n", fnum, fname)
+
 		l := len(fileList)
 		c := cap(fileList)
-		if l < c {	// new item will fit
-			fileList = fileList[0:l+1]
-			fileList[ l ] = string(fname)
+		if l < c { // new item will fit
+			fileList = fileList[0 : l+1]
+			fileList[l] = string(fname)
 		} else { // allocate more space
 			newList := make([]string, l, c*2)
 			n := copy(newList, fileList)
-			if n != len(fileList) { fmt.Printf("fatal copy error 1\n"); os.Exit(1) }
+			if n != len(fileList) {
+				fmt.Printf("fatal copy error 1\n")
+				os.Exit(1)
+			}
 			fileList = newList
 			l = len(fileList)
 			c = cap(fileList)
-			fileList = fileList[0:l+1]
-			fileList[ l ] = string(fname)			
+			fileList = fileList[0 : l+1]
+			fileList[l] = string(fname)
 		}
 		// skip the extra data fields
 		hdr.extraFldLen = SixteenBit(hdrData[28:30])
 		curPos, err = fpin.Seek(int64(hdr.extraFldLen), 1)
-		curPos = curPos	// TODO
+		curPos = curPos // TODO
 		hdr.compressSize = ThirtyTwoBit(hdrData[18:22])
-		newPos, err = fpin.Seek(int64(hdr.compressSize), 1)		// seek past zip'd data
-		if err != nil { /* TODO */ }
+		newPos, err = fpin.Seek(int64(hdr.compressSize), 1) // seek past zip'd data
+		if err != nil { /* TODO */
+		}
 		if newPos >= fileSize {
 			// fmt.Printf("Reached end of zip file\n")
 			break
 		}
 	}
-		
-	return fileList, true	// success
+
+	return fileList, true // success
 }
 
 func main() {
@@ -262,13 +279,15 @@ func main() {
 
 			var files []string
 			files, ok = ListOfFiles(flag.Arg(i))
-			if !ok { fmt.Printf("ListOfFiles failed\n") }
-			if files == nil || ! ok { /* TODO problem */ 
+			if !ok {
+				fmt.Printf("ListOfFiles failed\n")
+			}
+			if files == nil || !ok { /* TODO problem */
 			} else {
 				for ndx, val := range files {
 					fmt.Printf("file[%d] = %s\n", ndx+1, val)
 				}
-			}			
+			}
 		}
 	}
 	os.Exit(0)
