@@ -16,6 +16,7 @@ import (
 
 const DEBUG = true
 const (
+	DOSEPOCH        = 1980
 	ZIP_LocalHdrSig = "PK\003\004"
 	ZIP_CentDirSig  = "PK\001\002"
 	ZIP_STORED      = 0
@@ -64,6 +65,35 @@ func ThirtyTwoBit(n []byte) uint32 {
 	return rc
 }
 
+func zip_decode_date(d uint16) {
+	var year, month, day uint16
+	year = d & 0xfe00
+	year >>= 9
+	fmt.Printf("year = %d\n", year+DOSEPOCH)
+
+	month = d & 0x01e0
+	month >>= 5
+	fmt.Printf("month = %d\n", month)
+
+	day = d & 0x001f
+	fmt.Printf("day = %d\n", day)
+}
+
+func zip_decode_time(t uint16) {
+	var hour, minute, second uint16
+	hour = t & 0xf800
+	hour >>= 11
+	fmt.Printf("hour = %d\n", hour)
+
+	minute = t & 0x01e0
+	minute >>= 5
+	fmt.Printf("minute = %d\n", minute)
+
+	second = (t & 0x001f) * 2
+	fmt.Printf("second = %d\n", second)
+}
+
+
 // test function to read thru file headers
 func readHeaders(filename string) bool {
 	var n int
@@ -101,10 +131,15 @@ func readHeaders(filename string) bool {
 		}
 		//	    fmt.Printf("data = %v\n", hdrData)
 
-		if string(hdrData[0:4]) == ZIP_LocalHdrSig {
-			//            if DEBUG { fmt.Printf("good magic number\n") }
-			hdr.zlhsig = ZIP_LocalHdrSig
+		if string(hdrData[0:4]) != ZIP_LocalHdrSig {
+			if string(hdrData[0:4]) == ZIP_CentDirSig {
+				break
+			}
+			fmt.Printf("bad magic number in local headers\n")
+			fmt.Printf("got %v\n", hdrData[0:4])
+			return false
 		}
+
 		hdr.ver2Extract = SixteenBit(hdrData[4:6])
 		//        fmt.Printf("Extract version req = %d\n", hdr.ver2Extract )
 
@@ -117,11 +152,14 @@ func readHeaders(filename string) bool {
 			fmt.Printf("Trouble -- unimplemented compression meth %d\n", hdr.compressMeth)
 			os.Exit(1)
 		}
+
 		hdr.lastModTime = SixteenBit(hdrData[10:12])
-		//        fmt.Printf("LastModTime = %d\n", hdr.lastModTime )
+		fmt.Printf("LastModTime = %d\n", hdr.lastModTime)
+		zip_decode_time(hdr.lastModTime)
 
 		hdr.lastModDate = SixteenBit(hdrData[12:14])
-		//        fmt.Printf("LastModDate = %d\n", hdr.lastModDate )
+		fmt.Printf("LastModDate = %d\n", hdr.lastModDate)
+		zip_decode_date(hdr.lastModDate)
 
 		hdr.crc32 = ThirtyTwoBit(hdrData[14:18])
 		//        fmt.Printf("crc32 = %4x\n", hdr.crc32)
@@ -254,7 +292,7 @@ func ListOfFiles(filename string) ([]string, bool) {
 		curPos = curPos // TODO
 		hdr.compressSize = ThirtyTwoBit(hdrData[18:22])
 		newPos, err = fpin.Seek(int64(hdr.compressSize), 1) // seek past zip'd data
-		if err != nil { /* TODO */
+		if err != nil {                                     /* TODO */
 		}
 		if newPos >= fileSize {
 			// fmt.Printf("Reached end of zip file\n")
@@ -274,8 +312,9 @@ func main() {
 	} else { // whitespace sensitive
 		for i := 0; i < flag.NArg(); i++ {
 			fmt.Printf("%d %s\n", i, flag.Arg(i))
-			//ok = readHeaders(flag.Arg(i))
-			//if ok == false { /* tell somebody */ }
+			ok = readHeaders(flag.Arg(i))
+			if ok == false { /* tell somebody */
+			}
 
 			var files []string
 			files, ok = ListOfFiles(flag.Arg(i))
