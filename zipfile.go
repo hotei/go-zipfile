@@ -13,7 +13,7 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"compress/zlib"
+	"compress/flate"
 	//    "unsafe"
 )
 
@@ -222,24 +222,26 @@ func (z *ZipFile) ListZip(which int) {
 
 		fmt.Printf("slice [0:80] of zip'd data: %v\n", compData[0:80])
 		// got it in RAM, now need to expand it
-		b := new(bytes.Buffer)          // create a new buffer
+		b := new(bytes.Buffer)          // create a new buffer with io methods
 		in := bytes.NewBuffer(compData) // copy compressed data into new buf
-		r, err := zlib.NewInflater(in)
+		r := flate.NewInflater(in)
 		if err != nil {
 			fmt.Printf("%s has err = %v\n", z.fileName, err)
 			os.Exit(1)
 		}
 		defer r.Close()
-		b.Reset()
-		n2, err = io.Copy(b, r)
+		b.Reset()					// empty out the buffer
+		n2, err = io.Copy(b, r)		// now fill it from compressed data
 		if err != nil {
 			fmt.Printf("%s has err = %v\n", z.fileName, err)
 			os.Exit(1)
 			// fmt.Printf("r = %v\n", r)
 			r.Close()
 		}
-		s := b.String()
-		fmt.Printf("%s\n", s)
+		n2, err = io.Copy(os.Stdout, b)
+		
+		//s := b.String()				// 
+		//fmt.Printf("OUTPUT of inflater: \n%s\n", s)
 		n2 = n2
 		//expdData := make([]byte, z.headers[which].unComprSize)
 		//expdData = expdData
