@@ -4,6 +4,8 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
+// <David Rook> ravenstone13@cox.net
+// This is a work-in-progress
 
 package main
 
