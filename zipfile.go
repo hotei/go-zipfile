@@ -31,6 +31,18 @@ const (
 	ZIP_DEFLATED    = 8
 )
 
+
+var (
+    ErrWriteTooLong    = os.NewError("write too long")
+    ErrFieldTooLong    = os.NewError("header field too long")
+    ErrWriteAfterClose = os.NewError("write after close")
+)
+
+var (
+    HeaderError os.Error = os.ErrorString("invalid zip header")
+)
+
+
 type ZipFile struct {
 	fileName string
 	//	fpin     *os.File   // does it make sense to carry this in struct?
