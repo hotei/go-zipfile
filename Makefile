@@ -1,12 +1,10 @@
 GOCOMP = $(HOME)/bin/6g
 GOLINK = $(HOME)/bin/6l
+GOLIB =  $(HOME)/lib
 
-
-zipfile: zipfile.go
+zipfile: zipfile.go zip.6
 	$(GOCOMP) zipfile.go
-	$(GOLINK) -o zipfile zipfile.6 
+	$(GOLINK) -o zipfile -L . zipfile.6
 
-clean:
-	rm -f zipfile *.core *~
-
-
+zip.6: zip.go
+	$(GOCOMP) zip.go
