@@ -74,7 +74,7 @@ type Header struct {
 	Compress  uint16 // only one method implemented and thats flate/deflate
 	Offset    int64
 	Crc32     uint32
-	hreader       io.ReadSeeker
+	hreader   io.ReadSeeker
 }
 
 
@@ -115,7 +115,7 @@ func NewReader(r io.ReadSeeker) (*ZipReader, os.Error) {
 	return x, nil
 }
 
-func (r * ZipReader) Headers() []*Header {
+func (r *ZipReader) Headers() []*Header {
 
 	_, err := r.reader.Seek(0, 0)
 	if err != nil {
@@ -142,7 +142,7 @@ func (r * ZipReader) Headers() []*Header {
 }
 
 // returns ? for no more data?
-func (r * ZipReader) Next() (*Header, os.Error) {
+func (r *ZipReader) Next() (*Header, os.Error) {
 
 	var localHdr [30]byte // size of header data fixed fields only
 	n, err := r.reader.Read(&localHdr)
@@ -190,32 +190,40 @@ func (r * ZipReader) Next() (*Header, os.Error) {
 
 func (h *Header) Open() (io.Reader, os.Error) {
 	_, err := h.hreader.Seek(h.Offset, 0)
-	if err != nil { fatal_err(err) }
+	if err != nil {
+		fatal_err(err)
+	}
 	comprData := make([]byte, h.SizeCompr)
 	n, err := h.hreader.Read(comprData)
-	if err != nil { fatal_err(err) }
+	if err != nil {
+		fatal_err(err)
+	}
 	fmt.Printf("Header.Open() Read in %d bytes of compressed (deflated) data\n", n)
 
 	// got it in RAM, now need to expand it
-	b := new(bytes.Buffer)          // create a new buffer with io methods
+	b := new(bytes.Buffer)           // create a new buffer with io methods
 	in := bytes.NewBuffer(comprData) // fill new buffer with compressed data
-	inpt := flate.NewInflater(in)      // attach a reader to the buffer
-	if err != nil { fatal_err(err) }
-	defer inpt.Close()         // make sure we eventually close the reader
-	b.Reset()               // empty out the buffer
+	inpt := flate.NewInflater(in)    // attach a reader to the buffer
+	if err != nil {
+		fatal_err(err)
+	}
+	defer inpt.Close()        // make sure we eventually close the reader
+	b.Reset()                 // empty out the buffer
 	_, err = io.Copy(b, inpt) // now fill buffer from compressed data from the inpt object
-	if err != nil { fatal_err(err) }
+	if err != nil {
+		fatal_err(err)
+	}
 	// b now holds the expanded data in a Buffer object which has read methods
 	return b, nil
-	
+
 	/*
-	expdData := make([]byte, z.LocalHeaders[which].unComprSize)		// make the expanded buffer
-	n, err = b.Read(expdData)		// copy expanded stuff to new buffer
-	if n != int(z.LocalHeaders[which].unComprSize) {
-		fmt.Printf("copied %d, expected %d\n", n, int64(z.LocalHeaders[which].unComprSize) )
-		fmt.Printf("%s has 12.5 err = %v\n", z.FileName, os.EINVAL)
-		os.Exit(1)
-	}
+		expdData := make([]byte, z.LocalHeaders[which].unComprSize)		// make the expanded buffer
+		n, err = b.Read(expdData)		// copy expanded stuff to new buffer
+		if n != int(z.LocalHeaders[which].unComprSize) {
+			fmt.Printf("copied %d, expected %d\n", n, int64(z.LocalHeaders[which].unComprSize) )
+			fmt.Printf("%s has 12.5 err = %v\n", z.FileName, os.EINVAL)
+			os.Exit(1)
+		}
 	*/
 
 }
@@ -304,5 +312,3 @@ func ReaderAtSection(r io.ReaderAt, start, end int64) io.ReaderAt {
 func ReaderAtStream(r io.ReaderAt) io.Reader {
 	return nil
 }
-
-

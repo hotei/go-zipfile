@@ -41,7 +41,9 @@ func test_0() {
 	n := 1
 	for {
 		hdr, err := rz.Next()
-		if err != nil { fatal_err(err) }
+		if err != nil {
+			fatal_err(err)
+		}
 		if hdr == nil {
 			break
 		}
@@ -63,29 +65,37 @@ func test_1() {
 	}
 	fmt.Printf("opened zip file %s\n", testfile)
 	rz, err := zip.NewReader(input)
-	if err != nil { fatal_err(err) }
+	if err != nil {
+		fatal_err(err)
+	}
 
 	filelist := rz.Headers()
 	filelist = filelist
 	fmt.Printf("test_1 c'est fini\n")
 	for _, hdr := range filelist {
 		fmt.Printf("Size %d, Size Compressed %d, Type flag %d, LastMod %d, ComprMeth %d, Offset %d\n",
-				   hdr.Size, hdr.SizeCompr, hdr.Typeflag, hdr.Mtime, hdr.Compress, hdr.Offset)
+			hdr.Size, hdr.SizeCompr, hdr.Typeflag, hdr.Mtime, hdr.Compress, hdr.Offset)
 	}
 }
 
 func test_2() {
 	const testfile = "stuf.zip"
-	
+
 	input, err := os.Open(testfile, os.O_RDONLY, 0666)
-	if err != nil { fatal_err(err) }
+	if err != nil {
+		fatal_err(err)
+	}
 	fmt.Printf("opened zip file %s\n", testfile)
 	rz, err := zip.NewReader(input)
-	if err != nil { fatal_err(err) }
+	if err != nil {
+		fatal_err(err)
+	}
 	hdr, err := rz.Next()
 	rdr, err := hdr.Open()
 	_, err = io.Copy(os.Stdout, rdr)
-	if err != nil { fatal_err(err) }
+	if err != nil {
+		fatal_err(err)
+	}
 }
 
 // M A I N ----------------------------------------------------------------------- M A I N
@@ -94,7 +104,7 @@ func main() {
 	// test_0()
 	// test_1()
 	test_2()
-	
+
 	fmt.Printf("<end of test of newest ziptest>\n")
 	os.Exit(0)
 }
