@@ -7,8 +7,8 @@ package zip
 
 
 import (
-	//	"bytes"
-	//	"compress/flate"
+	"bytes"
+	"compress/flate"
 	//	"hash/crc32"
 
 	"fmt"
@@ -59,7 +59,7 @@ var (
 //		}
 //		io.Copy(data, zr)
 //	}
-type Reader struct {
+type ZipReader struct {
 	current_file int
 	reader       io.ReadSeeker
 }
@@ -74,6 +74,7 @@ type Header struct {
 	Compress  uint16 // only one method implemented and thats flate/deflate
 	Offset    int64
 	Crc32     uint32
+	hreader       io.ReadSeeker
 }
 
 
@@ -104,8 +105,8 @@ func (h *Header) unpackLocalHeader(src [30]byte) os.Error {
 }
 
 
-func NewReader(r io.ReadSeeker) (*Reader, os.Error) {
-	x := new(Reader)
+func NewReader(r io.ReadSeeker) (*ZipReader, os.Error) {
+	x := new(ZipReader)
 	x.reader = r
 	_, err := r.Seek(0, 0)
 	if err != nil {
@@ -114,17 +115,7 @@ func NewReader(r io.ReadSeeker) (*Reader, os.Error) {
 	return x, nil
 }
 
-func ReaderAtSection(r io.ReaderAt, start, end int64) io.ReaderAt {
-	return nil
-}
-
-
-func ReaderAtStream(r io.ReaderAt) io.Reader {
-	return nil
-}
-
-
-func (r *Reader) Headers() []*Header {
+func (r * ZipReader) Headers() []*Header {
 
 	_, err := r.reader.Seek(0, 0)
 	if err != nil {
@@ -142,7 +133,6 @@ func (r *Reader) Headers() []*Header {
 		fmt.Printf("Header[%d] filename %s\n", n, hdr.Name)
 		n++
 		Mtime := time.SecondsToUTC(hdr.Mtime)
-
 		fmt.Printf("Size %d, Size Compressed %d, Type flag %d, LastMod %s, ComprMeth %d, Offset %d\n",
 			hdr.Size, hdr.SizeCompr, hdr.Typeflag, Mtime.String(), hdr.Compress, hdr.Offset)
 		// io.Copy(data, zr)	// copy data out of uncompressed buffer via zr
@@ -152,7 +142,7 @@ func (r *Reader) Headers() []*Header {
 }
 
 // returns ? for no more data?
-func (r *Reader) Next() (*Header, os.Error) {
+func (r * ZipReader) Next() (*Header, os.Error) {
 
 	var localHdr [30]byte // size of header data fixed fields only
 	n, err := r.reader.Read(&localHdr)
@@ -161,6 +151,7 @@ func (r *Reader) Next() (*Header, os.Error) {
 	}
 	fmt.Printf("Read 30 bytes of header = %v\n", localHdr)
 	hdr := new(Header)
+	hdr.hreader = r.reader
 	err = hdr.unpackLocalHeader(localHdr)
 	if err != nil {
 		return nil, err
@@ -189,7 +180,7 @@ func (r *Reader) Next() (*Header, os.Error) {
 	if err != nil {
 		fatal_err(err)
 	}
-	// read possibly compressed blob
+	// seek past compressed blob
 	hdr.Offset = currentPos
 	currentPos, err = r.reader.Seek(hdr.SizeCompr, 1)
 
@@ -197,15 +188,36 @@ func (r *Reader) Next() (*Header, os.Error) {
 	return hdr, nil
 }
 
+func (h *Header) Open() (io.Reader, os.Error) {
+	_, err := h.hreader.Seek(h.Offset, 0)
+	if err != nil { fatal_err(err) }
+	comprData := make([]byte, h.SizeCompr)
+	n, err := h.hreader.Read(comprData)
+	if err != nil { fatal_err(err) }
+	fmt.Printf("Header.Open() Read in %d bytes of compressed (deflated) data\n", n)
 
-func fatal_err(erx os.Error) {
-	fmt.Printf("%s \n", erx)
-	os.Exit(1)
-}
+	// got it in RAM, now need to expand it
+	b := new(bytes.Buffer)          // create a new buffer with io methods
+	in := bytes.NewBuffer(comprData) // fill new buffer with compressed data
+	inpt := flate.NewInflater(in)      // attach a reader to the buffer
+	if err != nil { fatal_err(err) }
+	defer inpt.Close()         // make sure we eventually close the reader
+	b.Reset()               // empty out the buffer
+	_, err = io.Copy(b, inpt) // now fill buffer from compressed data from the inpt object
+	if err != nil { fatal_err(err) }
+	// b now holds the expanded data in a Buffer object which has read methods
+	return b, nil
+	
+	/*
+	expdData := make([]byte, z.LocalHeaders[which].unComprSize)		// make the expanded buffer
+	n, err = b.Read(expdData)		// copy expanded stuff to new buffer
+	if n != int(z.LocalHeaders[which].unComprSize) {
+		fmt.Printf("copied %d, expected %d\n", n, int64(z.LocalHeaders[which].unComprSize) )
+		fmt.Printf("%s has 12.5 err = %v\n", z.FileName, os.EINVAL)
+		os.Exit(1)
+	}
+	*/
 
-
-func (f *Header) Open() (io.Reader, os.Error) {
-	return nil, nil
 }
 
 
@@ -277,3 +289,20 @@ func thirtyTwoBit(n []byte) uint32 {
 	rc |= uint32(n[0])
 	return rc
 }
+
+func fatal_err(erx os.Error) {
+	fmt.Printf("%s \n", erx)
+	os.Exit(1)
+}
+
+
+func ReaderAtSection(r io.ReaderAt, start, end int64) io.ReaderAt {
+	return nil
+}
+
+
+func ReaderAtStream(r io.ReaderAt) io.Reader {
+	return nil
+}
+
+
