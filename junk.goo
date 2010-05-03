@@ -1,6 +1,3 @@
-func valid_sig(sig string) bool {
-	return sig == ZIP_LocalHdrSig
-}
 
 
 // function to read thru whole file picking up all file headers into headers[]

@@ -2,7 +2,6 @@
    package zip docs
 
 */
-
 package zip
 
 
@@ -47,18 +46,25 @@ var (
 // and then it can be treated as an io.Reader to access the file's data.
 //
 // Example:
-//	zr := zip.NewReader(r)
-//	for {
-//		hdr, err := zr.Next()
-//		if err != nil {
-//			// handle error
-//		}
-//		if hdr == nil {
-//			// end of zip archive
-//			break
-//		}
-//		io.Copy(data, zr)
+// func test_2() {
+//	const testfile = "stuf.zip"
+//
+//	input, err := os.Open(testfile, os.O_RDONLY, 0666)
+//	if err != nil {
+//		fatal_err(err)
 //	}
+//	fmt.Printf("opened zip file %s\n", testfile)
+//	rz, err := zip.NewReader(input)
+//	if err != nil {
+//		fatal_err(err)
+//	}
+//	hdr, err := rz.Next()
+//	rdr, err := hdr.Open()
+//	_, err = io.Copy(os.Stdout, rdr) // open first file only
+//	if err != nil {
+//		fatal_err(err)
+//	}
+// }
 type ZipReader struct {
 	current_file int
 	reader       io.ReadSeeker
@@ -66,15 +72,15 @@ type ZipReader struct {
 
 // describes one entry in zip archive, might be compressed or stored (ie. type 8 or 0 only)
 type Header struct {
-	Name      string
-	Size      int64  // size while uncompressed
-	SizeCompr int64  // size while compressed
-	Typeflag  byte   // directory or regular file or ...
-	Mtime     int64  // use 'go' version of time, not MSDOS version
-	Compress  uint16 // only one method implemented and thats flate/deflate
-	Offset    int64
-	Crc32     uint32
-	hreader   io.ReadSeeker
+	Name        string
+	Size        int64  // size while uncompressed
+	SizeCompr   int64  // size while compressed
+	Typeflag    byte   // directory or regular file or ...
+	Mtime       int64  // use 'go' version of time, not MSDOS version
+	Compress    uint16 // only one method implemented and thats flate/deflate
+	Offset      int64
+	StoredCrc32 uint32
+	hreader     io.ReadSeeker
 }
 
 
@@ -93,8 +99,7 @@ func (h *Header) unpackLocalHeader(src [30]byte) os.Error {
 	}
 	h.Size = int64(thirtyTwoBit(src[22:26]))
 	h.SizeCompr = int64(thirtyTwoBit(src[18:22]))
-
-	h.Crc32 = thirtyTwoBit(src[14:18])
+	h.StoredCrc32 = thirtyTwoBit(src[14:18])
 
 	pktime := sixteenBit(src[10:12])
 	pkdate := sixteenBit(src[12:14])
@@ -104,7 +109,7 @@ func (h *Header) unpackLocalHeader(src [30]byte) os.Error {
 	return nil
 }
 
-
+// attach a zip reader interface to an open File object
 func NewReader(r io.ReadSeeker) (*ZipReader, os.Error) {
 	x := new(ZipReader)
 	x.reader = r
@@ -115,6 +120,9 @@ func NewReader(r io.ReadSeeker) (*ZipReader, os.Error) {
 	return x, nil
 }
 
+// grabs the next zip header from the file
+// returns one header record for each stored file
+//
 func (r *ZipReader) Headers() []*Header {
 
 	_, err := r.reader.Seek(0, 0)
@@ -130,18 +138,14 @@ func (r *ZipReader) Headers() []*Header {
 		if hdr == nil {
 			break
 		}
-		fmt.Printf("Header[%d] filename %s\n", n, hdr.Name)
 		n++
-		Mtime := time.SecondsToUTC(hdr.Mtime)
-		fmt.Printf("Size %d, Size Compressed %d, Type flag %d, LastMod %s, ComprMeth %d, Offset %d\n",
-			hdr.Size, hdr.SizeCompr, hdr.Typeflag, Mtime.String(), hdr.Compress, hdr.Offset)
-		// io.Copy(data, zr)	// copy data out of uncompressed buffer via zr
+		hdr.Dump()
+		// TODO create header array and return it
 	}
-
 	return nil
 }
 
-// returns ? for no more data?
+// returns nil when no more data available
 func (r *ZipReader) Next() (*Header, os.Error) {
 
 	var localHdr [30]byte // size of header data fixed fields only
@@ -188,6 +192,18 @@ func (r *ZipReader) Next() (*Header, os.Error) {
 	return hdr, nil
 }
 
+// Simple listing of header, same data should appear for the command "unzip -v file.zip"
+// but with slightly different order and formatting
+func (hdr *Header) Dump() {
+	Mtime := time.SecondsToUTC(hdr.Mtime)
+	fmt.Printf("%s: Size %d, Size Compressed %d, Type flag %d, LastMod %s, ComprMeth %d, Offset %d\n",
+		hdr.Name, hdr.Size, hdr.SizeCompr, hdr.Typeflag, Mtime.String(), hdr.Compress, hdr.Offset)
+}
+
+// returns a Reader for the specified header
+// it's users responsibility to actual vs stored crc if desired
+// see test suite for an example of how can easily be done if data will fit in RAM
+// (Doable but it Gets trickier if it won't fit)
 func (h *Header) Open() (io.Reader, os.Error) {
 	_, err := h.hreader.Seek(h.Offset, 0)
 	if err != nil {
@@ -198,6 +214,7 @@ func (h *Header) Open() (io.Reader, os.Error) {
 	if err != nil {
 		fatal_err(err)
 	}
+	h.Dump()
 	fmt.Printf("Header.Open() Read in %d bytes of compressed (deflated) data\n", n)
 
 	// got it in RAM, now need to expand it
@@ -215,17 +232,6 @@ func (h *Header) Open() (io.Reader, os.Error) {
 	}
 	// b now holds the expanded data in a Buffer object which has read methods
 	return b, nil
-
-	/*
-		expdData := make([]byte, z.LocalHeaders[which].unComprSize)		// make the expanded buffer
-		n, err = b.Read(expdData)		// copy expanded stuff to new buffer
-		if n != int(z.LocalHeaders[which].unComprSize) {
-			fmt.Printf("copied %d, expected %d\n", n, int64(z.LocalHeaders[which].unComprSize) )
-			fmt.Printf("%s has 12.5 err = %v\n", z.FileName, os.EINVAL)
-			os.Exit(1)
-		}
-	*/
-
 }
 
 
