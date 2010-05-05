@@ -1,4 +1,4 @@
-// ziptest.go
+// reader_test.go
 
 // Copyright 2009-2010 David Rook. All rights reserved.
 // Use of this source code is governed by a BSD-style
@@ -8,6 +8,8 @@
 // <David Rook> ravenstone13@cox.net
 // This is a work-in-progress
 //     This version does only reading, no zip writing
+//     Verbose mode will eventually go away
+
 package zip
 
 import (
@@ -19,11 +21,11 @@ import (
 )
 
 // Purpose: exercise NewReader(),Next(), Dump() on a valid zip file
-// Run thru all files in archive, printing header info using debug mode
+// Run thru all files in archive, printing header info using Verbose mode
 //
 func Test001(t *testing.T) {
 	const testfile = "testdata/stuf.zip"
-	Dashboard.Debug = true
+	Dashboard.Verbose = true
 	f, err := os.Open(testfile, os.O_RDONLY, 0666)
 	if err != nil {
 		t.Fatalf("Unexpected error: %v", err)
@@ -68,7 +70,7 @@ func Test002(t *testing.T) {
 	}
 	filelist := rz.Headers()
 	fmt.Printf("len filelist = %d\n", len(filelist))
-	Dashboard.Debug = false
+	Dashboard.Verbose = false
 	for ndx, hdr := range filelist {
 		//		fmt.Printf("hdr = %v\n",hdr)
 		fmt.Printf("\nlisting from hdr %d\n", ndx)
@@ -124,7 +126,7 @@ func Test004(t *testing.T) {
 	filelist := rz.Headers()
 	fmt.Printf("len filelist = %d\n", len(filelist))
 
-	Dashboard.Debug = false
+	Dashboard.Verbose = false
 	n := 1
 	for ndx, hdr := range filelist {
 		if strings.HasSuffix(hdr.Name, ".html") {

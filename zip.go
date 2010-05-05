@@ -94,10 +94,11 @@ var (
 	CRC32MatchError  os.Error = os.ErrorString("Stored CRC32 doesn't match computed CRC32")
 	TooBigError      os.Error = os.ErrorString("Can't use CRC32 if file > 2GB, Try unsetting Paranoid")
 	ExpandingError   os.Error = os.ErrorString("Cant expand array")
+    CantHappenError  os.Error = os.ErrorString("Cant happen - but did anyway :-(")
 )
 
 type Dash struct {
-	Debug    bool
+	Verbose    bool
 	Paranoid bool
 }
 
@@ -179,7 +180,7 @@ func (h *Header) unpackLocalHeader(src [LocalHdrSize]byte) os.Error {
 			fatal_err(FutureTimeError)
 		}
 	}
-	if Dashboard.Debug {
+	if Dashboard.Verbose {
 		sec := time.SecondsToUTC(h.Mtime)
 		fmt.Printf("Header time parsed to : %s\n", sec.String())
 	}
@@ -215,7 +216,7 @@ func (r *ZipReader) Headers() []Header {
 		if hdr == nil {
 			break
 		}
-		if Dashboard.Debug {
+		if Dashboard.Verbose {
 			hdr.Dump()
 		}
 
@@ -240,11 +241,11 @@ func (r *ZipReader) Headers() []Header {
 	return Hdrs
 }
 
-// decode PK formats and convert to go values, returns next header record
-// returns nil Header when no more data available
+// decode PK formats and convert to go values, returns next Header record or
+// nil when no more data available
 func (r *ZipReader) Next() (*Header, os.Error) {
 
-	var localHdr [LocalHdrSize]byte // size of header data fixed fields only
+	var localHdr [LocalHdrSize]byte // start by reading fixed size fields (Name,Extra are vari-len)
 	n, err := r.reader.Read(&localHdr)
 	if err != nil {
 		fatal_err(err)
@@ -252,7 +253,7 @@ func (r *ZipReader) Next() (*Header, os.Error) {
 	if n < LocalHdrSize {
 		fatal_err(ShortReadError)
 	}
-	if Dashboard.Debug {
+	if Dashboard.Verbose {
 		fmt.Printf("Read %d bytes of header = %v\n", LocalHdrSize, localHdr)
 	}
 	hdr := new(Header)
@@ -262,13 +263,17 @@ func (r *ZipReader) Next() (*Header, os.Error) {
 		return nil, err
 	}
 	if hdr.Size == -1 { // reached end of archive records, start of directory
-		// not an error, returns nil to signal no more data
+		// not an error, return nil to signal no more data
 		return nil, nil
 	}
 	fileNameLen := sixteenBit(localHdr[26:28])
 	// TODO read past end of archive without seeing Central Directory ? NOT POSSIBLE ?
+    // what about multi-volume disks?  Do they have any Central Dir data?
 	if fileNameLen == 0 {
-		return nil, nil
+        fmt.Fprintf(os.Stderr, "read past end of archive and didn't find the Central Directory")
+        if Dashboard.Paranoid {	fatal_err(CantHappenError) }
+        // or is it just end-of-file on multi-vol?
+        return nil, nil
 	}
 	fname := make([]byte, fileNameLen)
 	n, err = r.reader.Read(fname)
@@ -278,28 +283,34 @@ func (r *ZipReader) Next() (*Header, os.Error) {
 	if n < int(fileNameLen) {
 		fatal_err(ShortReadError)
 	}
-	if Dashboard.Debug {
-		fmt.Printf("filename archive: %s \n", fname)
+	if Dashboard.Verbose {
+		fmt.Printf("filename: %s \n", fname)
 	}
 	hdr.Name = string(fname)
 	// read extra data if present
-	if Dashboard.Debug {
+	if Dashboard.Verbose {
 		fmt.Printf("reading extra data if present\n")
 	}
 	extraFieldLen := sixteenBit(localHdr[28:30])
+    // skip over it if needed, but in either case, save current position after seek
+    // ie. degenerate case is Seek(0,1) but do it anyway
 	currentPos, err := r.reader.Seek(int64(extraFieldLen), 1)
 	if err != nil {
 		fatal_err(err)
 	}
-	// seek past compressed blob to start of next header
-	hdr.Offset = currentPos // save this
-	currentPos, err = r.reader.Seek(hdr.SizeCompr, 1)
-	// side effect is to move r.reader pointer to start of next header
+    hdr.Offset = currentPos
+	// seek past compressed/stored blob to start of next header
+	_, err = r.reader.Seek(hdr.SizeCompr, 1)
+	if err != nil {
+		fatal_err(err)
+	}
+ 
+	// NOTE: side effect is to move r.reader pointer to start of next header
 	return hdr, nil
 }
 
 // Simple listing of header, same data should appear for the command "unzip -v file.zip"
-// but with slightly different order and formatting  TODO - make format similar ?
+// but with slightly different order and formatting  TODO - make format more similar ?
 func (hdr *Header) Dump() {
 	Mtime := time.SecondsToUTC(hdr.Mtime)
 	fmt.Printf("%s: Size %d, Size Compressed %d, Type flag %d, LastMod %s, ComprMeth %d, Offset %d\n",
@@ -319,26 +330,26 @@ func (h *Header) Open() (io.Reader, os.Error) {
 	if int64(n) < h.SizeCompr {
 		fatal_err(ShortReadError)
 	}
-	if Dashboard.Debug {
+	if Dashboard.Verbose {
 		fmt.Printf("Header.Open() Read in %d bytes of compressed (deflated) data\n", n)
 		// prints out filename etc so we can later validate expanded data is appropriate
 		h.Dump()
 	}
-	// got it in RAM, now need to expand it
+	// got it as comprData in RAM, now need to expand it
 	in := bytes.NewBuffer(comprData) // fill new buffer with compressed data
 	inpt := flate.NewInflater(in)    // attach a reader to the buffer
 	if err != nil {
 		fatal_err(err)
 	}
-	if !Dashboard.Paranoid {
-		return inpt, nil
+	if ! Dashboard.Paranoid {
+		return inpt, nil        // TODO not safe but currently necessary for big files, will fix soon
 	}
 
 	if h.Size > TooBig {
 		fatal_err(TooBigError)
 	}
 
-	// if we're paranoid we want to crc32 the buffer and check vs stored crc32
+	// normally we want to crc32 the buffer and check computed vs stored crc32
 	b := new(bytes.Buffer) // create a new buffer with io methods
 	var n2 int64
 	n2, err = io.Copy(b, inpt) // now fill buffer from compressed data using inpt
@@ -359,7 +370,7 @@ func (h *Header) Open() (io.Reader, os.Error) {
 		fatal_err(ShortReadError)
 	}
 	mycrc32 := crc32.ChecksumIEEE(expdData)
-	if Dashboard.Debug {
+	if Dashboard.Verbose {
 		fmt.Printf("Computed Checksum = %0x, stored checksum = %0x\n", mycrc32, h.StoredCrc32)
 	}
 	if mycrc32 != h.StoredCrc32 {
@@ -404,12 +415,12 @@ func makeGoDate(d, t uint16) int64 {
 	ft.ZoneOffset = 0
 	ft.Zone = "UTC"
 
-	if Dashboard.Debug {
+	if Dashboard.Verbose {
 		fmt.Printf("year(%d) month(%d) day(%d) \n", year, month, day)
 		fmt.Printf("hour(%d) minute(%d) second(%d)\n", hour, minute, second)
 	}
 	// TODO this checking is approximate for now, daysinmonth not checked fully
-	// TODO we wont know file name at this point unless Debug is also true
+	// TODO we wont know file name at this point unless Verbose is also true
 	//  ? is that a problem or not ?
 	if Dashboard.Paranoid {
 		badDate := false
