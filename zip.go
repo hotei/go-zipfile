@@ -8,57 +8,7 @@
 //     This version does only zip reading, no zip writing yet
 
 /*
-   package zip docs
-
-PLEASE - take a look at the ziptest.go example for an overview of how the
-library can be used.
-
-LIMITATIONS:
-Most significant is that this is a read-only library at present.  That could change
-but my first priority was to read zip files I have, not create new ones.
-
-
-At present there is a limitation of 2GB on expanded
-files if you set paranoid mode - ie if you want CRC32 checking done after
-expansion.  This is a limitation currently imposed by the IEEECRC32 function.
-With paranoid mode off you should be able to read files up to 9 Billion GiB.
-Older versions of zip only supported a max 4 of GB file sizes but later
-zip versions expanded that to "big enough".  Older versions also limited the number
-of files in an archive to 16 bits (65536 files) but newer versions have upped
-that number to "big enough" also.
-
-
-
-Paranoid mode will also abort if it encounters an invalid date, like month 13
-or a modification date that's in the future compared to the time.Seconds()
-when the program is run.  Ie "NOW".
-
-Paranoid mode can be turned off by setting zip.Dashboard.Paranoid = false in
-your program.  One reason for a paranoid mode is that in the MSDOS/MSWindows
-world a lot of virus programs messed with
-dates to purposely screw up your backup and restore programs.  With paranoid =
-false you'll still see a warning to STDERR about the problems encountered, but
-it will not abort.
-
-Paranoid mode may cause smaller systems to run out of memory as the Open() function
-pulls the contents of the zip archive entry into memory to uncompress and
-run the IEEEcrc32().  This obviously depends on the size of the files you're
-working with as well as your system's capacity.
-
-Zip was born in the days when diskettes held less than 1 MB and it was common to
-require several "volumes" to create an archive of a disk file.  If you don't know
-what a diskette is it doesn't matter, because this version doesn't know or care
-if it's multi-volume. That's because this version of the zip library does NOT
-look at the central header areas at
-the end of the zip archive.  Instead it builds headers on the fly by reading the
-actual archived data. Additionally I feel that reading the actual data is useful to validate
-the readability of removeable media since some of mine is several decades old.
-
-There is an opportunity to do some additional checking
-in paranoid mode by comparing the actual headers with the stored ones.  That's
-on the "TODO" list.
-<more>
-
+   Additional documentation for package 'zip' can be found in doc.go
 */
 package zip
 
@@ -94,15 +44,15 @@ var (
 	CRC32MatchError  os.Error = os.ErrorString("Stored CRC32 doesn't match computed CRC32")
 	TooBigError      os.Error = os.ErrorString("Can't use CRC32 if file > 2GB, Try unsetting Paranoid")
 	ExpandingError   os.Error = os.ErrorString("Cant expand array")
-    CantHappenError  os.Error = os.ErrorString("Cant happen - but did anyway :-(")
+	CantHappenError  os.Error = os.ErrorString("Cant happen - but did anyway :-(")
 )
 
+// used to control behavior of zip library code
 type Dash struct {
-	Verbose    bool
+	Verbose  bool
 	Paranoid bool
 }
 
-// used to control behavior of zip library code
 var (
 	Dashboard = new(Dash)
 )
@@ -139,8 +89,17 @@ type ZipReader struct {
 	reader       io.ReadSeeker
 }
 
-// ???  See PKWare APPNOTE.TXT for original header info
-// describes one entry in zip archive, might be compressed or stored (ie. type 8 or 0 only)
+func NewReader(r io.ReadSeeker) (*ZipReader, os.Error) {
+	x := new(ZipReader)
+	x.reader = r
+	_, err := r.Seek(0, 0) // make sure we've got a seekable input  ? may be unnecessary ?
+	if err != nil {
+		fatal_err(err)
+	}
+	return x, nil
+}
+
+// Describes one entry in zip archive, might be compressed or stored (ie. type 8 or 0 only)
 type Header struct {
 	Name        string
 	Size        int64 // size while uncompressed
@@ -153,7 +112,7 @@ type Header struct {
 	Hreader     io.ReadSeeker
 }
 
-
+// Unpack header based on PKWare's APPNOTE.TXT
 func (h *Header) unpackLocalHeader(src [LocalHdrSize]byte) os.Error {
 	if string(src[0:4]) != ZIP_LocalHdrSig {
 		if string(src[0:4]) == ZIP_CentDirSig { // reached last file, now into directory
@@ -187,16 +146,6 @@ func (h *Header) unpackLocalHeader(src [LocalHdrSize]byte) os.Error {
 	return nil
 }
 
-// attach a zip reader interface to an open File object
-func NewReader(r io.ReadSeeker) (*ZipReader, os.Error) {
-	x := new(ZipReader)
-	x.reader = r
-	_, err := r.Seek(0, 0) // make sure we've got a seekable input  ? may be unnecessary ?
-	if err != nil {
-		fatal_err(err)
-	}
-	return x, nil
-}
 
 // grabs the next zip header from the archive
 // returns one header record for each stored file
@@ -268,12 +217,14 @@ func (r *ZipReader) Next() (*Header, os.Error) {
 	}
 	fileNameLen := sixteenBit(localHdr[26:28])
 	// TODO read past end of archive without seeing Central Directory ? NOT POSSIBLE ?
-    // what about multi-volume disks?  Do they have any Central Dir data?
+	// what about multi-volume disks?  Do they have any Central Dir data?
 	if fileNameLen == 0 {
-        fmt.Fprintf(os.Stderr, "read past end of archive and didn't find the Central Directory")
-        if Dashboard.Paranoid {	fatal_err(CantHappenError) }
-        // or is it just end-of-file on multi-vol?
-        return nil, nil
+		fmt.Fprintf(os.Stderr, "read past end of archive and didn't find the Central Directory")
+		if Dashboard.Paranoid {
+			fatal_err(CantHappenError)
+		}
+		// or is it just end-of-file on multi-vol?
+		return nil, nil
 	}
 	fname := make([]byte, fileNameLen)
 	n, err = r.reader.Read(fname)
@@ -292,19 +243,19 @@ func (r *ZipReader) Next() (*Header, os.Error) {
 		fmt.Printf("reading extra data if present\n")
 	}
 	extraFieldLen := sixteenBit(localHdr[28:30])
-    // skip over it if needed, but in either case, save current position after seek
-    // ie. degenerate case is Seek(0,1) but do it anyway
+	// skip over it if needed, but in either case, save current position after seek
+	// ie. degenerate case is Seek(0,1) but do it anyway
 	currentPos, err := r.reader.Seek(int64(extraFieldLen), 1)
 	if err != nil {
 		fatal_err(err)
 	}
-    hdr.Offset = currentPos
+	hdr.Offset = currentPos
 	// seek past compressed/stored blob to start of next header
 	_, err = r.reader.Seek(hdr.SizeCompr, 1)
 	if err != nil {
 		fatal_err(err)
 	}
- 
+
 	// NOTE: side effect is to move r.reader pointer to start of next header
 	return hdr, nil
 }
@@ -341,8 +292,8 @@ func (h *Header) Open() (io.Reader, os.Error) {
 	if err != nil {
 		fatal_err(err)
 	}
-	if ! Dashboard.Paranoid {
-		return inpt, nil        // TODO not safe but currently necessary for big files, will fix soon
+	if !Dashboard.Paranoid {
+		return inpt, nil // TODO not safe but currently necessary for big files, will fix soon
 	}
 
 	if h.Size > TooBig {
