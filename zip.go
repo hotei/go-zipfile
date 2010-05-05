@@ -1,5 +1,56 @@
+// Copyright 2009-2010 David Rook. All rights reserved.
+// Use of this source code is governed by a BSD-style
+// license that can be found in the LICENSE file.
+// source can be found at http://www.github.com/hotei/go-zipfile
+//
+// <David Rook> ravenstone13@cox.net
+// This is a work-in-progress
+//     This version does only zip reading, no zip writing yet
+
 /*
    package zip docs
+
+PLEASE - take a look at the ziptest.go example for an overview of how the
+library can be used.  
+
+LIMITATIONS:
+Most significant is that this is a read-only library at present.  Could change
+but my first priority was to read zip files I have, not create new ones.
+
+At present there is a limitation of 2GB on expanded
+files if you set paranoid mode - ie if you want CRC32 checking done after
+expansion.  This is a limitation currently imposed by the IEEECRC32 function.
+With paranoid mode off you should be able to read files up to 9 Billion GiB.
+Older versions of zip only supported a max 4 of GB file sizes but later 
+zip versions expanded that to "big enough".  Older versions also limited the number
+of files in an archive to 16 bits (65536 files) but newer versions have upped
+that number to "big enough" also.
+
+Paranoid mode will also abort if it encounters an invalid date, like month 13
+or a modification date that's in the future compared to the time.Seconds() 
+when the program is run.  Ie "NOW".  
+
+Paranoid mode can be turned off by setting zip.Dashboard.Paranoid = false in
+your program.  One reason for a paranoid mode is that in the MSDOS/MSWindows 
+world a lot of virus programs messed with 
+dates to purposely screw up your backup and restore programs.  With paranoid =
+false you'll still see a warning to STDERR about the problems encountered, but
+it will not abort.
+
+Paranoid mode may cause smaller systems to run out of memory as the Open() function
+pulls the contents of the zip archive entry into memory to uncompress and 
+run the IEEEcrc32().  This obviously depends on the size of the files you're 
+working with as well as your system's capacity.
+
+This version of the zip library does NOT look at the central header areas at
+the end of the zip archive.  Instead it builds headers on the fly by reading the
+actual archived data. I feel that reading the actual data is useful to validate
+the readability of the media. 
+
+There is an opportunity to do some additional checking
+in paranoid mode by comparing the actual headers with the stored ones.  That's
+on the "TODO" list.  
+<more>
 
 */
 package zip
@@ -19,20 +70,12 @@ import (
 const (
 	BITS_IN_INT     = 32
 	MSDOS_EPOCH     = 1980
-	ZIP_LocalHdrSig = "PK\003\004" // was 003004
+	ZIP_LocalHdrSig = "PK\003\004"
 	ZIP_CentDirSig  = "PK\001\002"
 	ZIP_STORED      = 0
 	ZIP_DEFLATED    = 8
 	TooBig          = 1<<(BITS_IN_INT-1) - 1
 )
-
-/*
-var (
-	ErrWriteTooLong    = os.NewError("write too long")
-	ErrFieldTooLong    = os.NewError("header field too long")
-	ErrWriteAfterClose = os.NewError("write after close")
-)
-*/
 
 var (
 	InvalidSigError  os.Error = os.ErrorString("Bad Local Hdr Sig (magic number)")
