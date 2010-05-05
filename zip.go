@@ -11,45 +11,52 @@
    package zip docs
 
 PLEASE - take a look at the ziptest.go example for an overview of how the
-library can be used.  
+library can be used.
 
 LIMITATIONS:
-Most significant is that this is a read-only library at present.  Could change
+Most significant is that this is a read-only library at present.  That could change
 but my first priority was to read zip files I have, not create new ones.
+
 
 At present there is a limitation of 2GB on expanded
 files if you set paranoid mode - ie if you want CRC32 checking done after
 expansion.  This is a limitation currently imposed by the IEEECRC32 function.
 With paranoid mode off you should be able to read files up to 9 Billion GiB.
-Older versions of zip only supported a max 4 of GB file sizes but later 
+Older versions of zip only supported a max 4 of GB file sizes but later
 zip versions expanded that to "big enough".  Older versions also limited the number
 of files in an archive to 16 bits (65536 files) but newer versions have upped
 that number to "big enough" also.
 
+
+
 Paranoid mode will also abort if it encounters an invalid date, like month 13
-or a modification date that's in the future compared to the time.Seconds() 
-when the program is run.  Ie "NOW".  
+or a modification date that's in the future compared to the time.Seconds()
+when the program is run.  Ie "NOW".
 
 Paranoid mode can be turned off by setting zip.Dashboard.Paranoid = false in
-your program.  One reason for a paranoid mode is that in the MSDOS/MSWindows 
-world a lot of virus programs messed with 
+your program.  One reason for a paranoid mode is that in the MSDOS/MSWindows
+world a lot of virus programs messed with
 dates to purposely screw up your backup and restore programs.  With paranoid =
 false you'll still see a warning to STDERR about the problems encountered, but
 it will not abort.
 
 Paranoid mode may cause smaller systems to run out of memory as the Open() function
-pulls the contents of the zip archive entry into memory to uncompress and 
-run the IEEEcrc32().  This obviously depends on the size of the files you're 
+pulls the contents of the zip archive entry into memory to uncompress and
+run the IEEEcrc32().  This obviously depends on the size of the files you're
 working with as well as your system's capacity.
 
-This version of the zip library does NOT look at the central header areas at
+Zip was born in the days when diskettes held less than 1 MB and it was common to
+require several "volumes" to create an archive of a disk file.  If you don't know
+what a diskette is it doesn't matter, because this version doesn't know or care
+if it's multi-volume. That's because this version of the zip library does NOT
+look at the central header areas at
 the end of the zip archive.  Instead it builds headers on the fly by reading the
-actual archived data. I feel that reading the actual data is useful to validate
-the readability of the media. 
+actual archived data. Additionally I feel that reading the actual data is useful to validate
+the readability of removeable media since some of mine is several decades old.
 
 There is an opportunity to do some additional checking
 in paranoid mode by comparing the actual headers with the stored ones.  That's
-on the "TODO" list.  
+on the "TODO" list.
 <more>
 
 */
@@ -60,7 +67,6 @@ import (
 	"bytes"
 	"compress/flate"
 	"hash/crc32"
-
 	"fmt"
 	"io"
 	"os"
@@ -75,6 +81,7 @@ const (
 	ZIP_STORED      = 0
 	ZIP_DEFLATED    = 8
 	TooBig          = 1<<(BITS_IN_INT-1) - 1
+	LocalHdrSize    = 30
 )
 
 var (
@@ -99,10 +106,12 @@ var (
 	Dashboard = new(Dash)
 )
 
-// A Reader provides sequential access to the contents of a zip archive.
+// A ZipReader provides sequential or random access to the contents of a zip archive.
 // A zip archive consists of a sequence of files.
 // The Next method advances to the next file in the archive (including the first),
 // and then it can be treated as an io.Reader to access the file's data.
+// You can also pull all the headers with  h := rz.Headers() and then open
+// an individual file number n with rdr := h[n].Open()  See test suite for more examples.
 //
 // Example:
 // func test_2() {
@@ -144,7 +153,7 @@ type Header struct {
 }
 
 
-func (h *Header) unpackLocalHeader(src [30]byte) os.Error {
+func (h *Header) unpackLocalHeader(src [LocalHdrSize]byte) os.Error {
 	if string(src[0:4]) != ZIP_LocalHdrSig {
 		if string(src[0:4]) == ZIP_CentDirSig { // reached last file, now into directory
 			h.Size = -1 // signal last file reached
@@ -181,17 +190,17 @@ func (h *Header) unpackLocalHeader(src [30]byte) os.Error {
 func NewReader(r io.ReadSeeker) (*ZipReader, os.Error) {
 	x := new(ZipReader)
 	x.reader = r
-	_, err := r.Seek(0, 0)
+	_, err := r.Seek(0, 0) // make sure we've got a seekable input  ? may be unnecessary ?
 	if err != nil {
 		fatal_err(err)
 	}
 	return x, nil
 }
 
-// grabs the next zip header from the file
+// grabs the next zip header from the archive
 // returns one header record for each stored file
-//
 func (r *ZipReader) Headers() []Header {
+	// initial cap of 20 is arbitrary but kept low to accomodate small RAM systems, this is roughly 1KB
 	Hdrs := make([]Header, 20)
 
 	_, err := r.reader.Seek(0, 0)
@@ -231,19 +240,20 @@ func (r *ZipReader) Headers() []Header {
 	return Hdrs
 }
 
-// returns nil when no more data available
+// decode PK formats and convert to go values, returns next header record
+// returns nil Header when no more data available
 func (r *ZipReader) Next() (*Header, os.Error) {
 
-	var localHdr [30]byte // size of header data fixed fields only
+	var localHdr [LocalHdrSize]byte // size of header data fixed fields only
 	n, err := r.reader.Read(&localHdr)
 	if err != nil {
 		fatal_err(err)
 	}
-	if n < 30 {
+	if n < LocalHdrSize {
 		fatal_err(ShortReadError)
 	}
 	if Dashboard.Debug {
-		fmt.Printf("Read 30 bytes of header = %v\n", localHdr)
+		fmt.Printf("Read %d bytes of header = %v\n", LocalHdrSize, localHdr)
 	}
 	hdr := new(Header)
 	hdr.Hreader = r.reader
@@ -284,24 +294,18 @@ func (r *ZipReader) Next() (*Header, os.Error) {
 	// seek past compressed blob to start of next header
 	hdr.Offset = currentPos // save this
 	currentPos, err = r.reader.Seek(hdr.SizeCompr, 1)
-	// side effect is to move r.reader pointer to start of next headers
+	// side effect is to move r.reader pointer to start of next header
 	return hdr, nil
 }
 
 // Simple listing of header, same data should appear for the command "unzip -v file.zip"
-// but with slightly different order and formatting
+// but with slightly different order and formatting  TODO - make format similar ?
 func (hdr *Header) Dump() {
 	Mtime := time.SecondsToUTC(hdr.Mtime)
 	fmt.Printf("%s: Size %d, Size Compressed %d, Type flag %d, LastMod %s, ComprMeth %d, Offset %d\n",
 		hdr.Name, hdr.Size, hdr.SizeCompr, hdr.Typeflag, Mtime.String(), hdr.Compress, hdr.Offset)
 }
 
-// returns a Reader for the specified header
-// it's users responsibility to compare actual vs stored crc if desired
-// by setting zip.Dashboard.Paranoid = true
-// see test suite for an example of how can easily be done if data will fit in RAM
-// (Doable but it Gets trickier if it won't fit)
-// Program will abort if file is larger than 2 gig and user is Paranoid
 func (h *Header) Open() (io.Reader, os.Error) {
 	_, err := h.Hreader.Seek(h.Offset, 0)
 	if err != nil {
@@ -317,6 +321,7 @@ func (h *Header) Open() (io.Reader, os.Error) {
 	}
 	if Dashboard.Debug {
 		fmt.Printf("Header.Open() Read in %d bytes of compressed (deflated) data\n", n)
+		// prints out filename etc so we can later validate expanded data is appropriate
 		h.Dump()
 	}
 	// got it in RAM, now need to expand it
@@ -332,8 +337,6 @@ func (h *Header) Open() (io.Reader, os.Error) {
 	if h.Size > TooBig {
 		fatal_err(TooBigError)
 	}
-	// TODO ??? how do we insure eventual close of inpt
-	// defer inpt.Close()        // make sure we eventually close the reader
 
 	// if we're paranoid we want to crc32 the buffer and check vs stored crc32
 	b := new(bytes.Buffer) // create a new buffer with io methods
@@ -348,6 +351,7 @@ func (h *Header) Open() (io.Reader, os.Error) {
 	}
 	// TODO this feels like an extra step but not sure how to shorten it yet
 	// problem is we can't run ChecksumIEEE on Buffer, it requires []byte arg
+	// update: Russ Cox provided advice on method of attack, still need to implement
 	expdData := make([]byte, h.Size) // make the expanded buffer into a byte array
 	n, err = b.Read(expdData)        // copy buffer into expdData
 	if int64(n) < h.Size {
@@ -367,6 +371,7 @@ func (h *Header) Open() (io.Reader, os.Error) {
 	if err != nil {
 		fatal_err(err)
 	}
+	// TODO ??? how do we insure eventual close of inpt2
 	return inpt2, nil
 }
 
@@ -408,7 +413,6 @@ func makeGoDate(d, t uint16) int64 {
 	//  ? is that a problem or not ?
 	if Dashboard.Paranoid {
 		badDate := false
-		badDate = badDate
 		// no such thing as a bad year as 0..127 are valid
 		// and represent 1980 thru 2107
 		// if a file's Mtime is in the future Paranoid will it catch later
@@ -428,7 +432,7 @@ func makeGoDate(d, t uint16) int64 {
 			badDate = true
 		}
 		if badDate {
-			fmt.Fprintf(os.Stderr, "Encountered bad Mod Date: \n")
+			fmt.Fprintf(os.Stderr, "Encountered bad Mod Date/Time: \n")
 			fmt.Fprintf(os.Stderr, "year(%d) month(%d) day(%d) \n", year, month, day)
 			fmt.Fprintf(os.Stderr, "hour(%d) minute(%d) second(%d)\n", hour, minute, second)
 		}
@@ -454,9 +458,9 @@ func inRangeInt(a, b, c int) bool {
 	return true
 }
 
-// convert from litte endian two byte slice to int16
+// convert from little endian two byte slice to int16
 func sixteenBit(n []byte) uint16 {
-	if len(n) != 2 { /* TODO problem */
+	if len(n) != 2 {
 		fatal_err(Slice16Error)
 	}
 	var rc uint16
@@ -466,9 +470,9 @@ func sixteenBit(n []byte) uint16 {
 	return rc
 }
 
-// convert from litte endian four byte slice to int32
+// convert from little endian four byte slice to int32
 func thirtyTwoBit(n []byte) uint32 {
-	if len(n) != 4 { /* TODO problem */
+	if len(n) != 4 {
 		fatal_err(Slice32Error)
 	}
 	var rc uint32

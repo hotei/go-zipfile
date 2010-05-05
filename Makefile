@@ -1,10 +1,9 @@
-GOCOMP = $(HOME)/bin/6g
-GOLINK = $(HOME)/bin/6l
-GOLIB =  $(HOME)/lib
+include $(GOROOT)/src/Make.$(GOARCH)
 
-ziptest: ziptest.go zip.6
-	$(GOCOMP) ziptest.go
-	$(GOLINK) -o ziptest -L . ziptest.6
+TARG=zip
 
-zip.6: zip.go
-	$(GOCOMP) zip.go
+GOFILES=\
+	zip.go
+
+include $(GOROOT)/src/Make.pkg
+
