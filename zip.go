@@ -264,8 +264,21 @@ func (r *ZipReader) Next() (*Header, os.Error) {
 // but with slightly different order and formatting  TODO - make format more similar ?
 func (hdr *Header) Dump() {
 	Mtime := time.SecondsToUTC(hdr.Mtime)
-	fmt.Printf("%s: Size %d, Size Compressed %d, Type flag %d, LastMod %s, ComprMeth %d, Offset %d\n",
-		hdr.Name, hdr.Size, hdr.SizeCompr, hdr.Typeflag, Mtime.String(), hdr.Compress, hdr.Offset)
+	//	fmt.Printf("%s: Size %d, Size Compressed %d, Type flag %d, LastMod %s, ComprMeth %d, Offset %d\n",
+	//		hdr.Name, hdr.Size, hdr.SizeCompr, hdr.Typeflag, Mtime.String(), hdr.Compress, hdr.Offset)
+	var method string
+	if hdr.Compress == 8 {
+		method = "Deflated"
+	} else {
+		method = "Stored"
+	}
+
+	// sec := time.SecondsToUTC(hdr.Mtime)
+	// fmt.Printf("Header time parsed to : %s\n", sec.String())
+	fmt.Printf("%8d  %8s  %7d   %4d-%02d-%02d %02d:%02d:%02d  %08x  %s\n",
+		hdr.SizeCompr, method, hdr.Size,
+		Mtime.Year, Mtime.Month, Mtime.Day, Mtime.Hour, Mtime.Minute, Mtime.Second,
+		hdr.StoredCrc32, hdr.Name)
 }
 
 func (h *Header) Open() (io.Reader, os.Error) {

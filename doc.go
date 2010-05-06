@@ -5,7 +5,7 @@
 // license that can be found in the LICENSE file.
 // source can be found at http://www.github.com/hotei/go-zipfile
 //
-// <David Rook> ravenstone13@cox.net
+// <David Rook> ravenstone13@cox.net  AKA Hotei on golang.org and github
 // This is a work-in-progress
 //     This version does only zip reading, no zip writing yet
 
@@ -38,6 +38,8 @@ method has changed a bit.  Rather than convert, this libarary was writen from sc
 based on PKWARE's APPNOTE.TXT.  APPNOTE.TXT describes the contents of zip files
 from the perspective of the company who designed the zip protocol.  The resulting zip.go
 library is ready for beta-testing and passes the initial test suite.
+
+So far all testing has been on zip files smaller than 20 megabytes.
 
 REFERENCES:
 
@@ -76,8 +78,8 @@ run the IEEEcrc32().  This obviously depends on the size of the files you're
 working with as well as your system's capacity. This behavior is on the TODO list
 for improvement to reduce memory footprint.
 
-There is an opportunity to do some additional checking
-in paranoid mode by comparing the actual headers with ones stored in then
+There may be an opportunity to do some additional checking
+in paranoid mode by comparing the actual headers with the ones stored in the
 Central Directorys.  That's also on the "TODO" list.
 
 */
