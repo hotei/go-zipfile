@@ -1,17 +1,21 @@
-// Copyright 2009-2010 David Rook. All rights reserved.
-// Use of this source code is governed by a BSD-style
-// license that can be found in the LICENSE file.
-// source can be found at http://www.github.com/hotei/go-zipfile
-//
-// <David Rook> ravenstone13@cox.net
-// This is a work-in-progress
-//     This version does only zip reading, no zip writing yet
+// Copyright 2009-2011 David Rook. All rights reserved.
 
 /*
-   Additional documentation for package 'zip' can be found in doc.go
-*/
-package zip
+ * Use of this source code is governed by a BSD-style
+ * license that can be found in the LICENSE file.
+ * source can be found at http://www.github.com/hotei/go-zipfile
+ * 
+ * <David Rook> ravenstone13@cox.net
+ * This is a working work-in-progress
+ *      This version does only zip reading, no zip writing yet 
+ *      Updated to match new go package rqmts on 2011-12-13 working again
+ * 
+ *    Additional documentation for package 'zip' can be found in doc.go
+ */
 
+
+
+package zip
 
 import (
 	"bytes"
@@ -35,16 +39,16 @@ const (
 )
 
 var (
-	InvalidSigError  os.Error = os.ErrorString("Bad Local Hdr Sig (magic number)")
-	InvalidCompError os.Error = os.ErrorString("Bad compression method value")
-	ShortReadError   os.Error = os.ErrorString("short read")
-	FutureTimeError  os.Error = os.ErrorString("file's last Mod time is in future")
-	Slice16Error     os.Error = os.ErrorString("sixteenBit() did not get a 16 bit arg")
-	Slice32Error     os.Error = os.ErrorString("thirtytwoBit() did not get a 32 bit arg")
-	CRC32MatchError  os.Error = os.ErrorString("Stored CRC32 doesn't match computed CRC32")
-	TooBigError      os.Error = os.ErrorString("Can't use CRC32 if file > 2GB, Try unsetting Paranoid")
-	ExpandingError   os.Error = os.ErrorString("Cant expand array")
-	CantHappenError  os.Error = os.ErrorString("Cant happen - but did anyway :-(")
+	InvalidSigError  = os.NewError("Bad Local Hdr Sig (magic number)")
+	InvalidCompError = os.NewError("Bad compression method value")
+	ShortReadError   = os.NewError("short read")
+	FutureTimeError  = os.NewError("file's last Mod time is in future")
+	Slice16Error     = os.NewError("sixteenBit() did not get a 16 bit arg")
+	Slice32Error     = os.NewError("thirtytwoBit() did not get a 32 bit arg")
+	CRC32MatchError  = os.NewError("Stored CRC32 doesn't match computed CRC32")
+	TooBigError      = os.NewError("Can't use CRC32 if file > 2GB, Try unsetting Paranoid")
+	ExpandingError   = os.NewError("Cant expand array")
+	CantHappenError  = os.NewError("Cant happen - but did anyway :-(")
 )
 
 // used to control behavior of zip library code
@@ -113,7 +117,7 @@ type Header struct {
 }
 
 // Unpack header based on PKWare's APPNOTE.TXT
-func (h *Header) unpackLocalHeader(src [LocalHdrSize]byte) os.Error {
+func (h *Header) unpackLocalHeader(src []byte) os.Error {
 	if string(src[0:4]) != ZIP_LocalHdrSig {
 		if string(src[0:4]) == ZIP_CentDirSig { // reached last file, now into directory
 			h.Size = -1 // signal last file reached
@@ -145,7 +149,6 @@ func (h *Header) unpackLocalHeader(src [LocalHdrSize]byte) os.Error {
 	}
 	return nil
 }
-
 
 // grabs the next zip header from the archive
 // returns one header record for each stored file
@@ -194,8 +197,11 @@ func (r *ZipReader) Headers() []Header {
 // nil when no more data available
 func (r *ZipReader) Next() (*Header, os.Error) {
 
-	var localHdr [LocalHdrSize]byte // start by reading fixed size fields (Name,Extra are vari-len)
-	n, err := r.reader.Read(&localHdr)
+//	var localHdr [LocalHdrSize]byte (pre fixup)
+// start by reading fixed size fields (Name,Extra are vari-len)
+// after fixup we need to see this .Read([]byte)
+	localHdr := make([]byte, LocalHdrSize)
+	n, err := r.reader.Read(localHdr)
 	if err != nil {
 		fatal_err(err)
 	}
@@ -301,7 +307,7 @@ func (h *Header) Open() (io.Reader, os.Error) {
 	}
 	// got it as comprData in RAM, now need to expand it
 	in := bytes.NewBuffer(comprData) // fill new buffer with compressed data
-	inpt := flate.NewInflater(in)    // attach a reader to the buffer
+	inpt := flate.NewReader(in)    // attach a reader to the buffer
 	if err != nil {
 		fatal_err(err)
 	}
@@ -342,14 +348,13 @@ func (h *Header) Open() (io.Reader, os.Error) {
 	}
 	// TODO can we reuse in and inpt without problems?
 	in2 := bytes.NewBuffer(comprData)
-	inpt2 := flate.NewInflater(in2)
+	inpt2 := flate.NewReader(in2)
 	if err != nil {
 		fatal_err(err)
 	}
 	// TODO ??? how do we insure eventual close of inpt2
 	return inpt2, nil
 }
-
 
 //	convert PKware date, time uint16s into seconds since Unix Epoch
 func makeGoDate(d, t uint16) int64 {
@@ -466,11 +471,9 @@ func fatal_err(erx os.Error) {
 	os.Exit(1)
 }
 
-
 func ReaderAtSection(r io.ReaderAt, start, end int64) io.ReaderAt {
 	return nil
 }
-
 
 func ReaderAtStream(r io.ReaderAt) io.Reader {
 	return nil

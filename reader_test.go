@@ -115,7 +115,7 @@ func TestSeqRead(t *testing.T) {
 	const testfile = "testdata/phpBB.zip"
 	fmt.Printf("TestSeqRead start\n")
 
-	f, err := os.Open(testfile, os.O_RDONLY, 0666)
+	f, err := os.Open(testfile)
 	if err != nil {
 		t.Fatalf("Unexpected error: %v", err)
 	}
@@ -128,7 +128,7 @@ func TestSeqRead(t *testing.T) {
 	filelist := rz.Headers()
 	fmt.Printf("len filelist = %d\n", len(filelist))
 
-	o, err := os.Open("/dev/null", os.O_WRONLY, 0666)
+	o, err := os.OpenFile("/dev/null", os.O_WRONLY, 0666)
 	if err != nil {
 		t.Fatalf("Unexpected error: %v", err)
 	}
@@ -174,7 +174,7 @@ func TestSeqRead(t *testing.T) {
 // channel l signals completion in either case
 // failure results in c getting a message sent where n < 0, success n > 0
 func processBlob(hdrNum int, blob io.Reader, size int64, c chan int) {
-	o, err := os.Open("/dev/null", os.O_WRONLY, 0666)
+	o, err := os.OpenFile("/dev/null", os.O_WRONLY, 0666)
 	if err != nil {
 		c <- -hdrNum
 		return
@@ -219,7 +219,7 @@ func TestConcurrent(t *testing.T) {
 	c := make(chan int, 1)        // used to return value to caller when done
 	l := make(chan int, MAX_GORU) // limit loop to creating <= MAX_GORU goroutines at once
 
-	f, err := os.Open(testfile, os.O_RDONLY, 0666)
+	f, err := os.Open(testfile)
 	if err != nil {
 		t.Fatalf("Unexpected error: %v", err)
 	}
