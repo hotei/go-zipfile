@@ -20,6 +20,7 @@ package zip
 import (
 	"bytes"
 	"compress/flate"
+	"errors"
 	"hash/crc32"
 	"fmt"
 	"io"
@@ -39,16 +40,16 @@ const (
 )
 
 var (
-	InvalidSigError  = os.NewError("Bad Local Hdr Sig (magic number)")
-	InvalidCompError = os.NewError("Bad compression method value")
-	ShortReadError   = os.NewError("short read")
-	FutureTimeError  = os.NewError("file's last Mod time is in future")
-	Slice16Error     = os.NewError("sixteenBit() did not get a 16 bit arg")
-	Slice32Error     = os.NewError("thirtytwoBit() did not get a 32 bit arg")
-	CRC32MatchError  = os.NewError("Stored CRC32 doesn't match computed CRC32")
-	TooBigError      = os.NewError("Can't use CRC32 if file > 2GB, Try unsetting Paranoid")
-	ExpandingError   = os.NewError("Cant expand array")
-	CantHappenError  = os.NewError("Cant happen - but did anyway :-(")
+	InvalidSigError  = errors.New("Bad Local Hdr Sig (magic number")
+	InvalidCompError = errors.New("Bad compression method value")
+	ShortReadError   = errors.New("short read")
+	FutureTimeError  = errors.New("file's last Mod time is in future")
+	Slice16Error     = errors.New("sixteenBit() did not get a 16 bit arg")
+	Slice32Error     = errors.New("thirtytwoBit() did not get a 32 bit arg")
+	CRC32MatchError  = errors.New("Stored CRC32 doesn't match computed CRC32")
+	TooBigError      = errors.New("Can't use CRC32 if file > 2GB, Try unsetting Paranoid")
+	ExpandingError   = errors.New("Cant expand array")
+	CantHappenError  = errors.New("Cant happen - but did anyway :-(")
 )
 
 // used to control behavior of zip library code
@@ -93,7 +94,7 @@ type ZipReader struct {
 	reader       io.ReadSeeker
 }
 
-func NewReader(r io.ReadSeeker) (*ZipReader, os.Error) {
+func NewReader(r io.ReadSeeker) (*ZipReader, error) {
 	x := new(ZipReader)
 	x.reader = r
 	_, err := r.Seek(0, 0) // make sure we've got a seekable input  ? may be unnecessary ?
@@ -109,7 +110,7 @@ type Header struct {
 	Size        int64 // size while uncompressed
 	SizeCompr   int64 // size while compressed
 	Typeflag    byte
-	Mtime       int64  // use 'go' version of time, not MSDOS version
+	Mtime       time.Time  // use 'go' version of time, not MSDOS version
 	Compress    uint16 // only one method implemented and thats flate/deflate
 	Offset      int64
 	StoredCrc32 uint32
@@ -117,7 +118,7 @@ type Header struct {
 }
 
 // Unpack header based on PKWare's APPNOTE.TXT
-func (h *Header) unpackLocalHeader(src []byte) os.Error {
+func (h *Header) unpackLocalHeader(src []byte) error {
 	if string(src[0:4]) != ZIP_LocalHdrSig {
 		if string(src[0:4]) == ZIP_CentDirSig { // reached last file, now into directory
 			h.Size = -1 // signal last file reached
@@ -137,15 +138,14 @@ func (h *Header) unpackLocalHeader(src []byte) os.Error {
 	pktime := sixteenBit(src[10:12])
 	pkdate := sixteenBit(src[12:14])
 	h.Mtime = makeGoDate(pkdate, pktime)
-	if h.Mtime > time.Seconds() {
-		fmt.Fprintf(os.Stderr, "%s: %s\n", h.Name, FutureTimeError.String())
+	if h.Mtime.After(time.Now()) {
+		fmt.Fprintf(os.Stderr, "%s: %v\n", h.Name, FutureTimeError)
 		if Dashboard.Paranoid {
 			fatal_err(FutureTimeError)
 		}
 	}
 	if Dashboard.Verbose {
-		sec := time.SecondsToUTC(h.Mtime)
-		fmt.Printf("Header time parsed to : %s\n", sec.String())
+		fmt.Printf("Header time parsed to : %s\n", h.Mtime.String())
 	}
 	return nil
 }
@@ -195,7 +195,7 @@ func (r *ZipReader) Headers() []Header {
 
 // decode PK formats and convert to go values, returns next Header record or
 // nil when no more data available
-func (r *ZipReader) Next() (*Header, os.Error) {
+func (r *ZipReader) Next() (*Header, error) {
 
 //	var localHdr [LocalHdrSize]byte (pre fixup)
 // start by reading fixed size fields (Name,Extra are vari-len)
@@ -269,7 +269,7 @@ func (r *ZipReader) Next() (*Header, os.Error) {
 // Simple listing of header, same data should appear for the command "unzip -v file.zip"
 // but with slightly different order and formatting  TODO - make format more similar ?
 func (hdr *Header) Dump() {
-	Mtime := time.SecondsToUTC(hdr.Mtime)
+	Mtime := hdr.Mtime.UTC()
 	//	fmt.Printf("%s: Size %d, Size Compressed %d, Type flag %d, LastMod %s, ComprMeth %d, Offset %d\n",
 	//		hdr.Name, hdr.Size, hdr.SizeCompr, hdr.Typeflag, Mtime.String(), hdr.Compress, hdr.Offset)
 	var method string
@@ -283,11 +283,11 @@ func (hdr *Header) Dump() {
 	// fmt.Printf("Header time parsed to : %s\n", sec.String())
 	fmt.Printf("%8d  %8s  %7d   %4d-%02d-%02d %02d:%02d:%02d  %08x  %s\n",
 		hdr.SizeCompr, method, hdr.Size,
-		Mtime.Year, Mtime.Month, Mtime.Day, Mtime.Hour, Mtime.Minute, Mtime.Second,
+		Mtime.Year(), Mtime.Month(), Mtime.Day(), Mtime.Hour(), Mtime.Minute(), Mtime.Second(),
 		hdr.StoredCrc32, hdr.Name)
 }
 
-func (h *Header) Open() (io.Reader, os.Error) {
+func (h *Header) Open() (io.Reader, error) {
 	_, err := h.Hreader.Seek(h.Offset, 0)
 	if err != nil {
 		fatal_err(err)
@@ -357,7 +357,7 @@ func (h *Header) Open() (io.Reader, os.Error) {
 }
 
 //	convert PKware date, time uint16s into seconds since Unix Epoch
-func makeGoDate(d, t uint16) int64 {
+func makeGoDate(d, t uint16) time.Time {
 	var year, month, day uint16
 	year = d & 0xfe00
 	year >>= 9
@@ -374,16 +374,16 @@ func makeGoDate(d, t uint16) int64 {
 	second = (t & 0x001f) * 2
 	second = second
 
-	ft := new(time.Time)
-	ft.Year = int64(year) + MSDOS_EPOCH
-	ft.Month = int(month)
-	ft.Day = int(day)
-	ft.Hour = int(hour)
-	ft.Minute = int(minute)
-	ft.Second = int(second)
-	ft.ZoneOffset = 0
-	ft.Zone = "UTC"
+	ftYear := int(year + MSDOS_EPOCH)
+	ftMonth := time.Month(month)
+	ftDay := int(day)
+	ftHour := int(hour)
+	ftMinute := int(minute)
+	ftSecond := int(second)
+//	ftZoneOffset := 0
+	ftZone := time.UTC
 
+	ft := time.Date(ftYear, ftMonth, ftDay, ftHour, ftMinute, ftSecond,0,ftZone)
 	if Dashboard.Verbose {
 		fmt.Printf("year(%d) month(%d) day(%d) \n", year, month, day)
 		fmt.Printf("hour(%d) minute(%d) second(%d)\n", hour, minute, second)
@@ -417,7 +417,7 @@ func makeGoDate(d, t uint16) int64 {
 			fmt.Fprintf(os.Stderr, "hour(%d) minute(%d) second(%d)\n", hour, minute, second)
 		}
 	}
-	return ft.Seconds()
+	return ft
 }
 
 // true if b is between a and c, order not important
@@ -466,7 +466,7 @@ func thirtyTwoBit(n []byte) uint32 {
 	return rc
 }
 
-func fatal_err(erx os.Error) {
+func fatal_err(erx error) {
 	fmt.Printf("%s \n", erx)
 	os.Exit(1)
 }
