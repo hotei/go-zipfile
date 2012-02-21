@@ -269,6 +269,7 @@ func (r *ZipReader) Next() (*Header, error) {
 // Simple listing of header, same data should appear for the command "unzip -v file.zip"
 // but with slightly different order and formatting  TODO - make format more similar ?
 func (hdr *Header) Dump() {
+	if hdr.Name == "" { return }
 	Mtime := hdr.Mtime.UTC()
 	//	fmt.Printf("%s: Size %d, Size Compressed %d, Type flag %d, LastMod %s, ComprMeth %d, Offset %d\n",
 	//		hdr.Name, hdr.Size, hdr.SizeCompr, hdr.Typeflag, Mtime.String(), hdr.Compress, hdr.Offset)

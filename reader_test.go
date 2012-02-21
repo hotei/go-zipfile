@@ -21,13 +21,14 @@ import (
 	"testing"
 )
 
-/*
+
 // Purpose: exercise NewReader(),Next(), Dump() on a valid zip file
 // Run thru all files in archive, printing header info using Verbose mode
 //
 func Test001(t *testing.T) {
+	fmt.Printf("Test001 start\n")
 	const testfile = "testdata/stuf.zip"
-	f, err := os.Open(testfile, os.O_RDONLY, 0666)
+	f, err := os.Open(testfile)
 	if err != nil {
 		t.Fatalf("Unexpected error: %v", err)
 	}
@@ -56,10 +57,10 @@ func Test001(t *testing.T) {
 // Run thru all files in archive, printing header info
 //
 func Test002(t *testing.T) {
-
+	fmt.Printf("Test002 start\n")
 	const testfile = "testdata/phpBB.zip"
 
-	f, err := os.Open(testfile, os.O_RDONLY, 0666)
+	f, err := os.Open(testfile)
 	if err != nil {
 		t.Fatalf("Unexpected error: %v", err)
 	}
@@ -71,9 +72,9 @@ func Test002(t *testing.T) {
 	}
 	filelist := rz.Headers()
 	fmt.Printf("len filelist = %d\n", len(filelist))
-	for ndx, hdr := range filelist {
+	for _, hdr := range filelist {
 		//		fmt.Printf("hdr = %v\n",hdr)
-		fmt.Printf("\nlisting from hdr %d\n", ndx)
+		//  fmt.Printf("\nlisting from hdr %d\n", ndx)
 		hdr.Dump()
 	}
 	fmt.Printf("Test002 fini\n")
@@ -81,11 +82,11 @@ func Test002(t *testing.T) {
 }
 
 // Purpose: Exercise Open() on one file
-func Test003(t *testing.T) {
-
+func TestX003(t *testing.T) {
+	fmt.Printf("Test003 start\n")
 	const testfile = "testdata/stuf.zip"
 
-	f, err := os.Open(testfile, os.O_RDONLY, 0666)
+	f, err := os.Open(testfile)
 	if err != nil {
 		t.Fatalf("Unexpected error: %v", err)
 	}
@@ -106,14 +107,14 @@ func Test003(t *testing.T) {
 	}
 	fmt.Printf("Test003 fini\n")
 }
-*/
+
 
 // Purpose: Exercise Open() on multiple, non-sequential files from Header list
 // open and print only the html files from the archive
 func TestSeqRead(t *testing.T) {
+	fmt.Printf("TestSeqRead start\n")
 
 	const testfile = "testdata/phpBB.zip"
-	fmt.Printf("TestSeqRead start\n")
 
 	f, err := os.Open(testfile)
 	if err != nil {
@@ -163,7 +164,7 @@ func TestSeqRead(t *testing.T) {
 			hnum++
 		}
 	}
-	fmt.Printf("TestSeqRead fini\n")
+	fmt.Printf("TestSeqRead finishing normally\n")
 }
 
 // normally a real process would do something interesting with the blob contents
@@ -201,7 +202,7 @@ func processBlob(hdrNum int, blob io.Reader, size int64, c chan int) {
 // Test multiple instances of processBlob()
 // Doesn't really test concurrent reads on archive hmmmm...
 func TestConcurrent(t *testing.T) {
-
+	fmt.Printf("TestConcurrent starting\n")
 	var MAX_GORU = 14
 
 	tmp := os.Getenv("GOMAXPROCS")
@@ -214,7 +215,7 @@ func TestConcurrent(t *testing.T) {
 	MAX_GORU = MAXPROCS * 3
 
 	const testfile = "testdata/phpBB.zip"
-	fmt.Printf("TestConcurrent start with max of %d GoRus\n", MAX_GORU)
+	fmt.Printf("TestConcurrent uses a max of %d GoRus\n", MAX_GORU)
 
 	c := make(chan int, 1)        // used to return value to caller when done
 	l := make(chan int, MAX_GORU) // limit loop to creating <= MAX_GORU goroutines at once
@@ -269,7 +270,7 @@ func TestConcurrent(t *testing.T) {
 		workout--
 	}
 	fmt.Printf("Non-sequential rc results is sign of success\n")
-	fmt.Printf("TestConcurrent fini\n")
+	fmt.Printf("TestConcurrent finishing normally\n")
 }
 
 func gather(workout int, c chan int, l chan int) {
