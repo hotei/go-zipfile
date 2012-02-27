@@ -62,8 +62,8 @@ of files in an archive to 16 bits (65536 files) but newer versions have upped
 that number to "big enough" also.
 
 Paranoid mode will also abort if it encounters an invalid date, like month 13
-or a modification date that's in the future compared to the time.Seconds()
-when the program is run.  Ie "NOW".
+or a modification date that's in the future compared to the time.Now()
+when the program is run.
 
 Paranoid mode can be turned off by setting zip.Dashboard.Paranoid = false in
 your program.  One reason for a paranoid mode is that in the MSDOS/MSWindows

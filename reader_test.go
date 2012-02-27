@@ -108,7 +108,7 @@ func TestX003(t *testing.T) {
 }
 
 // Purpose: Exercise Open() on multiple, non-sequential files from Header list
-// open and print only the html files from the archive
+// open and print only the php files from the archive
 func TestSeqRead(t *testing.T) {
 	fmt.Printf("TestSeqRead start\n")
 
@@ -269,12 +269,6 @@ func TestConcurrent(t *testing.T) {
 	}
 	fmt.Printf("Non-sequential rc results is sign of success\n")
 	fmt.Printf("TestConcurrent finishing normally\n")
-}
-
-func gather(workout int, c chan int, l chan int) {
-	// block while we gather back all the results
-	// any negative result means that processBlob failed for filelist[abs(rc)]
-	// and any individual failure means we fail whole test so fail immediately
 }
 
 /* // Test template

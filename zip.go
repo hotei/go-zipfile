@@ -1,4 +1,4 @@
-// Copyright 2009-2011 David Rook. All rights reserved.
+// Copyright 2009-2012 David Rook. All rights reserved.
 
 /*
  * Use of this source code is governed by a BSD-style
