@@ -13,16 +13,14 @@
  *    Additional documentation for package 'zip' can be found in doc.go
  */
 
-
-
 package zip
 
 import (
 	"bytes"
 	"compress/flate"
 	"errors"
-	"hash/crc32"
 	"fmt"
+	"hash/crc32"
 	"io"
 	"os"
 	"time"
@@ -110,8 +108,8 @@ type Header struct {
 	Size        int64 // size while uncompressed
 	SizeCompr   int64 // size while compressed
 	Typeflag    byte
-	Mtime       time.Time  // use 'go' version of time, not MSDOS version
-	Compress    uint16 // only one method implemented and thats flate/deflate
+	Mtime       time.Time // use 'go' version of time, not MSDOS version
+	Compress    uint16    // only one method implemented and thats flate/deflate
 	Offset      int64
 	StoredCrc32 uint32
 	Hreader     io.ReadSeeker
@@ -197,9 +195,9 @@ func (r *ZipReader) Headers() []Header {
 // nil when no more data available
 func (r *ZipReader) Next() (*Header, error) {
 
-//	var localHdr [LocalHdrSize]byte (pre fixup)
-// start by reading fixed size fields (Name,Extra are vari-len)
-// after fixup we need to see this .Read([]byte)
+	//	var localHdr [LocalHdrSize]byte (pre fixup)
+	// start by reading fixed size fields (Name,Extra are vari-len)
+	// after fixup we need to see this .Read([]byte)
 	localHdr := make([]byte, LocalHdrSize)
 	n, err := r.reader.Read(localHdr)
 	if err != nil {
@@ -269,7 +267,9 @@ func (r *ZipReader) Next() (*Header, error) {
 // Simple listing of header, same data should appear for the command "unzip -v file.zip"
 // but with slightly different order and formatting  TODO - make format more similar ?
 func (hdr *Header) Dump() {
-	if hdr.Name == "" { return }
+	if hdr.Name == "" {
+		return
+	}
 	Mtime := hdr.Mtime.UTC()
 	//	fmt.Printf("%s: Size %d, Size Compressed %d, Type flag %d, LastMod %s, ComprMeth %d, Offset %d\n",
 	//		hdr.Name, hdr.Size, hdr.SizeCompr, hdr.Typeflag, Mtime.String(), hdr.Compress, hdr.Offset)
@@ -308,7 +308,7 @@ func (h *Header) Open() (io.Reader, error) {
 	}
 	// got it as comprData in RAM, now need to expand it
 	in := bytes.NewBuffer(comprData) // fill new buffer with compressed data
-	inpt := flate.NewReader(in)    // attach a reader to the buffer
+	inpt := flate.NewReader(in)      // attach a reader to the buffer
 	if err != nil {
 		fatal_err(err)
 	}
@@ -381,10 +381,10 @@ func makeGoDate(d, t uint16) time.Time {
 	ftHour := int(hour)
 	ftMinute := int(minute)
 	ftSecond := int(second)
-//	ftZoneOffset := 0
+	//	ftZoneOffset := 0
 	ftZone := time.UTC
 
-	ft := time.Date(ftYear, ftMonth, ftDay, ftHour, ftMinute, ftSecond,0,ftZone)
+	ft := time.Date(ftYear, ftMonth, ftDay, ftHour, ftMinute, ftSecond, 0, ftZone)
 	if Dashboard.Verbose {
 		fmt.Printf("year(%d) month(%d) day(%d) \n", year, month, day)
 		fmt.Printf("hour(%d) minute(%d) second(%d)\n", hour, minute, second)

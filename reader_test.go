@@ -16,11 +16,10 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"strings"
 	"strconv"
+	"strings"
 	"testing"
 )
-
 
 // Purpose: exercise NewReader(),Next(), Dump() on a valid zip file
 // Run thru all files in archive, printing header info using Verbose mode
@@ -107,7 +106,6 @@ func TestX003(t *testing.T) {
 	}
 	fmt.Printf("Test003 fini\n")
 }
-
 
 // Purpose: Exercise Open() on multiple, non-sequential files from Header list
 // open and print only the html files from the archive
