@@ -11,9 +11,13 @@
  *      Updated to match new go package rqmts on 2011-12-13 working again
  * 
  *    Additional documentation for package 'zip' can be found in doc.go
- */
 
-package zip
+ Pkg returns too many fatal errors.  Need to feed error back out of package
+ and let caller determin what's really fatal.  Current version quits if fed a
+ corrupted file.  Which may be common in our intended use environment.
+*/
+
+package zipfile
 
 import (
 	"bytes"
@@ -22,6 +26,7 @@ import (
 	"fmt"
 	"hash/crc32"
 	"io"
+	"io/ioutil"
 	"os"
 	"time"
 )
@@ -38,7 +43,8 @@ const (
 )
 
 var (
-	InvalidSigError  = errors.New("Bad Local Hdr Sig (magic number")
+	CantCreatReader  = errors.New("Cant create a NewReader")
+	InvalidSigError  = errors.New("Bad Local Hdr Sig (invalid magic number)")
 	InvalidCompError = errors.New("Bad compression method value")
 	ShortReadError   = errors.New("short read")
 	FutureTimeError  = errors.New("file's last Mod time is in future")
@@ -51,13 +57,9 @@ var (
 )
 
 // used to control behavior of zip library code
-type Dash struct {
+var (
 	Verbose  bool
 	Paranoid bool
-}
-
-var (
-	Dashboard = new(Dash)
 )
 
 // A ZipReader provides sequential or random access to the contents of a zip archive.
@@ -96,10 +98,8 @@ func NewReader(r io.ReadSeeker) (*ZipReader, error) {
 	x := new(ZipReader)
 	x.reader = r
 	_, err := r.Seek(0, 0) // make sure we've got a seekable input  ? may be unnecessary ?
-	if err != nil {
-		fatal_err(err)
-	}
-	return x, nil
+	// err might not be nil on return - caller MUST test
+	return x, err
 }
 
 // Describes one entry in zip archive, might be compressed or stored (ie. type 8 or 0 only)
@@ -138,61 +138,56 @@ func (h *Header) unpackLocalHeader(src []byte) error {
 	h.Mtime = makeGoDate(pkdate, pktime)
 	if h.Mtime.After(time.Now()) {
 		fmt.Fprintf(os.Stderr, "%s: %v\n", h.Name, FutureTimeError)
-		if Dashboard.Paranoid {
+		if Paranoid {
 			fatal_err(FutureTimeError)
+		} else {
+			// warning or just ignore it ?
 		}
 	}
-	if Dashboard.Verbose {
+	if Verbose {
 		fmt.Printf("Header time parsed to : %s\n", h.Mtime.String())
 	}
 	return nil
 }
 
 // grabs the next zip header from the archive
-// returns one header record for each stored file
-func (r *ZipReader) Headers() []Header {
-	// initial cap of 20 is arbitrary but kept low to accomodate small RAM systems, this is roughly 1KB
-	Hdrs := make([]Header, 20)
-
+// returns one header pointer for each stored file
+func (r *ZipReader) Headers() ([]*Header, error) {
+	Hdrs := make([]*Header, 0, 20)
 	_, err := r.reader.Seek(0, 0)
 	if err != nil {
-		fatal_err(err)
+		if Paranoid {
+			fatal_err(err)
+		} else {
+			return nil, err
+		}
 	}
 	for {
 		hdr, err := r.Next()
 		if err != nil {
-			fatal_err(err)
+			if Paranoid {
+				fatal_err(err)
+			} else {
+				return nil, err
+			}
 		}
 		if hdr == nil {
 			break
 		}
-		if Dashboard.Verbose {
+		if Verbose {
 			hdr.Dump()
 		}
-
-		l := len(Hdrs)
-		c := cap(Hdrs)
-		if l < c { // append hdr to current array
-			Hdrs = Hdrs[0 : l+1]
-			Hdrs[l] = *hdr
-		} else { // other wise double size of array cap and retry
-			newHdrs := make([]Header, l, c*2)
-			n := copy(newHdrs, Hdrs)
-			if n != len(Hdrs) {
-				fatal_err(ExpandingError)
-			}
-			Hdrs = newHdrs
-			l := len(Hdrs)
-			// c := cap(Hdrs)
-			Hdrs = Hdrs[0 : l+1]
-			Hdrs[l] = *hdr
-		}
+		Hdrs = append(Hdrs, hdr)
 	}
-	return Hdrs
+	return Hdrs, nil
 }
 
-// decode PK formats and convert to go values, returns next Header record or
-// nil when no more data available
+// BUG(mdr) getting short read for UNK reasons in Next()
+//		assume body of zip is getting stored in header for some minor savings
+//		is it described (and I assume allowed) in spec?
+
+// decode PK formats and convert to go values, returns next Header pointer or
+// 		nil when no more data available
 func (r *ZipReader) Next() (*Header, error) {
 
 	//	var localHdr [LocalHdrSize]byte (pre fixup)
@@ -201,12 +196,23 @@ func (r *ZipReader) Next() (*Header, error) {
 	localHdr := make([]byte, LocalHdrSize)
 	n, err := r.reader.Read(localHdr)
 	if err != nil {
-		fatal_err(err)
+		if Paranoid {
+			fatal_err(err)
+		} else {
+			return nil, err
+		}
 	}
 	if n < LocalHdrSize {
-		fatal_err(ShortReadError)
+		fmt.Printf("Read %d bytes of header = %v %s\n", LocalHdrSize, localHdr, localHdr)
+		fmt.Printf("n(%d) < LocalHdrSize(%d)\n", n, LocalHdrSize)
+		if Paranoid {
+			fmt.Printf("Read %d bytes of header = %v\n", LocalHdrSize, localHdr)
+			fatal_err(ShortReadError)
+		} else {
+			return nil, ShortReadError // BUG why unexpected - sometimes
+		}
 	}
-	if Dashboard.Verbose {
+	if Verbose {
 		fmt.Printf("Read %d bytes of header = %v\n", LocalHdrSize, localHdr)
 	}
 	hdr := new(Header)
@@ -224,26 +230,36 @@ func (r *ZipReader) Next() (*Header, error) {
 	// what about multi-volume disks?  Do they have any Central Dir data?
 	if fileNameLen == 0 {
 		fmt.Fprintf(os.Stderr, "read past end of archive and didn't find the Central Directory")
-		if Dashboard.Paranoid {
+		if Paranoid {
 			fatal_err(CantHappenError)
+		} else {
+			// or is it just end-of-file on multi-vol?
+			return nil, nil // ignore it
 		}
-		// or is it just end-of-file on multi-vol?
-		return nil, nil
 	}
 	fname := make([]byte, fileNameLen)
 	n, err = r.reader.Read(fname)
 	if err != nil {
-		fatal_err(err)
+		if Paranoid {
+			fatal_err(err)
+		} else {
+			return nil, err
+		}
 	}
 	if n < int(fileNameLen) {
-		fatal_err(ShortReadError)
+		fmt.Printf("n < fileNameLen\n")
+		if Paranoid {
+			fatal_err(ShortReadError)
+		} else {
+			return nil, ShortReadError
+		}
 	}
-	if Dashboard.Verbose {
+	if Verbose {
 		fmt.Printf("filename: %s \n", fname)
 	}
 	hdr.Name = string(fname)
 	// read extra data if present
-	if Dashboard.Verbose {
+	if Verbose {
 		fmt.Printf("reading extra data if present\n")
 	}
 	extraFieldLen := sixteenBit(localHdr[28:30])
@@ -251,13 +267,21 @@ func (r *ZipReader) Next() (*Header, error) {
 	// ie. degenerate case is Seek(0,1) but do it anyway
 	currentPos, err := r.reader.Seek(int64(extraFieldLen), 1)
 	if err != nil {
-		fatal_err(err)
+		if Paranoid {
+			fatal_err(err)
+		} else {
+			return nil, err
+		}
 	}
 	hdr.Offset = currentPos
 	// seek past compressed/stored blob to start of next header
 	_, err = r.reader.Seek(hdr.SizeCompr, 1)
 	if err != nil {
-		fatal_err(err)
+		if Paranoid {
+			fatal_err(err)
+		} else {
+			return nil, err
+		}
 	}
 
 	// NOTE: side effect is to move r.reader pointer to start of next header
@@ -291,17 +315,30 @@ func (hdr *Header) Dump() {
 func (h *Header) Open() (io.Reader, error) {
 	_, err := h.Hreader.Seek(h.Offset, 0)
 	if err != nil {
-		fatal_err(err)
+		if Paranoid {
+			fatal_err(err)
+		} else {
+			return nil, err
+		}
 	}
 	comprData := make([]byte, h.SizeCompr)
 	n, err := h.Hreader.Read(comprData)
 	if err != nil {
-		fatal_err(err)
+		if Paranoid {
+			fatal_err(err)
+		} else {
+			return nil, err
+		}
 	}
 	if int64(n) < h.SizeCompr {
-		fatal_err(ShortReadError)
+		fmt.Printf("read(%d) which is less than stored compressed size(%d)", n, h.SizeCompr)
+		if Paranoid {
+			fatal_err(ShortReadError)
+		} else {
+			return nil, ShortReadError
+		}
 	}
-	if Dashboard.Verbose {
+	if Verbose {
 		fmt.Printf("Header.Open() Read in %d bytes of compressed (deflated) data\n", n)
 		// prints out filename etc so we can later validate expanded data is appropriate
 		h.Dump()
@@ -310,14 +347,21 @@ func (h *Header) Open() (io.Reader, error) {
 	in := bytes.NewBuffer(comprData) // fill new buffer with compressed data
 	inpt := flate.NewReader(in)      // attach a reader to the buffer
 	if err != nil {
-		fatal_err(err)
-	}
-	if !Dashboard.Paranoid {
-		return inpt, nil // TODO not safe but currently necessary for big files, will fix soon
+		if Paranoid {
+			fatal_err(err)
+		} else {
+			return inpt, err // TODO not always safe but currently necessary for big files, will fix soon
+		}
 	}
 
+	// BUG(mdr) need to handle bigger files gracefully
+
 	if h.Size > TooBig {
-		fatal_err(TooBigError)
+		if Paranoid {
+			fatal_err(TooBigError)
+		} else {
+			return nil, TooBigError
+		}
 	}
 
 	// normally we want to crc32 the buffer and check computed vs stored crc32
@@ -325,11 +369,19 @@ func (h *Header) Open() (io.Reader, error) {
 	var n2 int64
 	n2, err = io.Copy(b, inpt) // now fill buffer from compressed data using inpt
 	if err != nil {
-		fatal_err(err)
+		if Paranoid {
+			fatal_err(err)
+		} else {
+			return nil, err
+		}
 	}
 	if n2 < h.Size {
 		fmt.Printf("Actually copied %d, expected to copy %d\n", n, h.Size)
-		fatal_err(ShortReadError)
+		if Paranoid {
+			fatal_err(ShortReadError)
+		} else {
+			return nil, ShortReadError
+		}
 	}
 	// TODO this feels like an extra step but not sure how to shorten it yet
 	// problem is we can't run ChecksumIEEE on Buffer, it requires []byte arg
@@ -338,23 +390,38 @@ func (h *Header) Open() (io.Reader, error) {
 	n, err = b.Read(expdData)        // copy buffer into expdData
 	if int64(n) < h.Size {
 		fmt.Printf("copied %d, expected %d\n", n, h.Size)
-		fatal_err(ShortReadError)
+		if Paranoid {
+			fatal_err(ShortReadError)
+		} else {
+			return nil, ShortReadError
+		}
 	}
 	mycrc32 := crc32.ChecksumIEEE(expdData)
-	if Dashboard.Verbose {
+	if Verbose {
 		fmt.Printf("Computed Checksum = %0x, stored checksum = %0x\n", mycrc32, h.StoredCrc32)
 	}
 	if mycrc32 != h.StoredCrc32 {
-		fatal_err(CRC32MatchError)
+		if Paranoid {
+			fatal_err(CRC32MatchError)
+		} else {
+			return nil, CRC32MatchError
+		}
 	}
-	// TODO can we reuse in and inpt without problems?
-	in2 := bytes.NewBuffer(comprData)
-	inpt2 := flate.NewReader(in2)
-	if err != nil {
-		fatal_err(err)
+	if false {
+		//========	this worked, producing legal zip files ==========
+		fp, err := ioutil.TempFile(".", "test")
+		if err != nil {
+			fmt.Printf("walker: err %v\n", err)
+		}
+		nw, err := fp.Write(expdData)
+		_ = nw
+		if err != nil {
+			fmt.Printf("zipfile: write fail err %v\n", err)
+		}
+		//===========================================================
 	}
-	// TODO ??? how do we insure eventual close of inpt2
-	return inpt2, nil
+	bufReader := bytes.NewReader(expdData)
+	return bufReader, nil // who closes bufReader and how?
 }
 
 //	convert PKware date, time uint16s into seconds since Unix Epoch
@@ -385,14 +452,14 @@ func makeGoDate(d, t uint16) time.Time {
 	ftZone := time.UTC
 
 	ft := time.Date(ftYear, ftMonth, ftDay, ftHour, ftMinute, ftSecond, 0, ftZone)
-	if Dashboard.Verbose {
+	if Verbose {
 		fmt.Printf("year(%d) month(%d) day(%d) \n", year, month, day)
 		fmt.Printf("hour(%d) minute(%d) second(%d)\n", hour, minute, second)
 	}
 	// TODO this checking is approximate for now, daysinmonth not checked fully
 	// TODO we wont know file name at this point unless Verbose is also true
 	//  ? is that a problem or not ?
-	if Dashboard.Paranoid {
+	if Paranoid {
 		badDate := false
 		// no such thing as a bad year as 0..127 are valid
 		// and represent 1980 thru 2107
@@ -468,7 +535,7 @@ func thirtyTwoBit(n []byte) uint32 {
 }
 
 func fatal_err(erx error) {
-	fmt.Printf("%s \n", erx)
+	fmt.Printf("stopping because: %s \n", erx)
 	os.Exit(1)
 }
 

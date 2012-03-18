@@ -10,7 +10,7 @@
 //     This version does only reading, no zip writing
 //     Verbose mode will eventually go away
 
-package zip
+package zipfile
 
 import (
 	"fmt"
@@ -69,7 +69,10 @@ func Test002(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Unexpected error: %v", err)
 	}
-	filelist := rz.Headers()
+	filelist, err2 := rz.Headers()
+	if err2 != nil {
+		t.Fatalf("Unexpected error: %v", err)
+	}
 	fmt.Printf("len filelist = %d\n", len(filelist))
 	for _, hdr := range filelist {
 		//		fmt.Printf("hdr = %v\n",hdr)
@@ -124,7 +127,10 @@ func TestSeqRead(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Unexpected error: %v", err)
 	}
-	filelist := rz.Headers()
+	filelist, err2 := rz.Headers()
+	if err2 != nil {
+		t.Fatalf("Unexpected error: %v", err)
+	}
 	fmt.Printf("len filelist = %d\n", len(filelist))
 
 	o, err := os.OpenFile("/dev/null", os.O_WRONLY, 0666)
@@ -133,10 +139,10 @@ func TestSeqRead(t *testing.T) {
 	}
 	defer o.Close()
 	hnum := 1
-	Dashboard.Paranoid = true
+	Paranoid = true
 	for ndx, hdr := range filelist {
 		if strings.HasSuffix(hdr.Name, ".php") {
-			if Dashboard.Verbose {
+			if Verbose {
 				fmt.Printf("%4d: ", ndx)
 				hdr.Dump()
 			}
@@ -181,7 +187,7 @@ func processBlob(hdrNum int, blob io.Reader, size int64, c chan int) {
 	defer o.Close()
 	var n int64
 	n, err = io.Copy(o, blob)
-	if Dashboard.Verbose {
+	if Verbose {
 		fmt.Printf("processed header number %d\n", hdrNum)
 	}
 	if err != nil {
@@ -228,16 +234,19 @@ func TestConcurrent(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Unexpected error: %v", err)
 	}
-	filelist := rz.Headers()
+	filelist, err2 := rz.Headers()
+	if err2 != nil {
+		t.Fatalf("Unexpected error: %v", err)
+	}
 	fmt.Printf("len filelist = %d\n", len(filelist))
-	Dashboard.Paranoid = true // make sure we always do the CRC32IEEE() check
-	Dashboard.Verbose = false
+	Paranoid = true // make sure we always do the CRC32IEEE() check
+	Verbose = false
 	hnum := 0
 	// spread out the work among up to MAX_GORU CPUs
 	workout := 0
 	for ndx, hdr := range filelist {
 		if strings.HasSuffix(hdr.Name, ".php") {
-			//			if Dashboard.Verbose {
+			//			if Verbose {
 			fmt.Printf("%4d: ", ndx)
 			hdr.Dump()
 			//			}
