@@ -1,3 +1,6 @@
-Library to provide zip reader functions to go programs.  These are (hopefully) a little more tolerant of media errors than the standard go library package in archive/zip.  It was also my first "non-toy" program in go.
+Library to provide read-only zip reader functions to go programs.  
+
+These are (hopefully) a little more tolerant of media errors than the standard go library package in archive/zip.  
+It was my first "non-toy" program in go.
 
 For more info, see doc.go
